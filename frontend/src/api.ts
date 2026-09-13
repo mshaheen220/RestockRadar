@@ -37,6 +37,32 @@ export type WatchlistProduct = {
   aliases: Alias[];
 };
 
+export type CoverageSummary = {
+  total_transactions: number;
+  linked_transactions: number;
+  ignored_transactions: number;
+  unmatched_transactions: number;
+  unmatched_distinct_items: number;
+  linked_ratio: number;
+};
+
+export type CoverageStatus = 'linked' | 'unmatched' | 'ignored';
+
+export type CoverageItem = {
+  site_id: number;
+  site_name: string;
+  product_name: string;
+  transaction_count: number;
+  last_purchased: string;
+  alias_id: number | null;
+  watchlist_product_id: number | null;
+  linked_product_name: string | null;
+  ignored_at: string | null;
+  status: CoverageStatus;
+};
+
+export type Site = { id: number; name: string };
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -69,4 +95,23 @@ export const watchlistApi = {
     request<WatchlistProduct>(`/watchlist/${id}/match-suggestions/accept`, { method: 'POST', body: JSON.stringify(input) }),
   rejectSuggestion: (id: number, input: { site_name: string; raw_product_name: string }) =>
     request<{ rejected: boolean }>(`/watchlist/${id}/match-suggestions/reject`, { method: 'POST', body: JSON.stringify(input) }),
+};
+
+export const coverageApi = {
+  summary: () => request<CoverageSummary>('/coverage/summary'),
+  items: (params: { limit: number; offset: number; status?: CoverageStatus; search?: string; siteId?: number }) => {
+    const query = new URLSearchParams({ limit: String(params.limit), offset: String(params.offset) });
+    if (params.status) query.set('status', params.status);
+    if (params.search) query.set('search', params.search);
+    if (params.siteId) query.set('site_id', String(params.siteId));
+    return request<{ items: CoverageItem[]; total: number }>(`/coverage/items?${query}`);
+  },
+  ignore: (input: { site_name: string; raw_product_name: string }) =>
+    request<{ ignored: true }>('/coverage/ignore', { method: 'POST', body: JSON.stringify(input) }),
+  unignore: (input: { site_name: string; raw_product_name: string }) =>
+    request<{ ignored: false }>('/coverage/ignore', { method: 'DELETE', body: JSON.stringify(input) }),
+};
+
+export const sitesApi = {
+  list: () => request<Site[]>('/sites'),
 };

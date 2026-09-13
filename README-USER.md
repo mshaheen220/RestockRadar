@@ -14,6 +14,9 @@ how often you reorder each one from your past purchases, and shows you that on o
 - Suggests which of your past purchases (across all the different names stores use for the same thing)
   belong to each watchlist product, using the brand/variety details you entered — you review and
   approve or dismiss each suggestion, nothing links automatically.
+- Shows how much of your purchase history is actually organized, and lets you go the other direction —
+  starting from an unlinked purchase and picking which watchlist product it belongs to (or telling it
+  that item will never be a watchlist product).
 
 ## What it doesn't do yet
 
@@ -44,6 +47,40 @@ one you can **Accept** (link it in) or **Dismiss** (never suggest that one again
 Brand-only matching can occasionally suggest something from the wrong product — e.g. a different
 Chobani-brand item showing up under your yogurt entry. That's expected; just dismiss it. Adding a
 **variety** or other criterion (not just brand) usually makes the suggestions more precise.
+
+## Checking your coverage
+
+Open the **Coverage** tab to see the big picture: what percent of your purchase history is linked to a
+watchlist product, and every purchase-history item with its status — **Linked**, **Unmatched**, or
+**Ignored** — in one table.
+
+Use the **Status**, **Site**, and search filters at the top to narrow it down — e.g. Status = Linked to
+review and correct existing links, or Status = Unmatched to keep triaging what's left.
+
+Actions depend on an item's status:
+
+- **Unmatched**: pick a product from the "Assign to…" dropdown and click the link icon, or click the
+  eye-slash icon to **Ignore** it (for things that will never be a watchlist product — a one-off Amazon
+  purchase, a DVD, produce you're not tracking yet).
+- **Linked**: shows which product it's linked to; click the unlink icon to undo it (it goes back to
+  Unmatched). Use this if a suggestion or assignment turns out to be wrong — e.g. a differently-flavored
+  item from the right brand got linked to the wrong product.
+- **Ignored**: click the eye icon to un-ignore it, putting it back into Unmatched.
+
+### Doing this in bulk
+
+Check the box next to any items you want to handle together, or check the box in the table header to
+select everything currently visible (on the current page, after filters). Once you've selected at least
+one item, a bar appears above the table with:
+
+- A dropdown of what to do: **Assign to product…**, **Ignore**, **Un-ignore**, or **Unlink**.
+- For "Assign to product…", a second dropdown to pick which product.
+- An **Apply** button.
+
+This is the fastest way to clear out a filtered view — e.g. filter to Status = Unmatched, search for a
+name pattern, select-all, and assign everything at once. "Unlink" and "Un-ignore" only do something to
+items that are actually linked/ignored — applying them to a mixed selection just skips the items where
+they don't apply.
 
 ## Using the dashboard
 

@@ -14,6 +14,11 @@
  *   GET    /api/watchlist/{id}/match-suggestions
  *   POST   /api/watchlist/{id}/match-suggestions/accept
  *   POST   /api/watchlist/{id}/match-suggestions/reject
+ *   GET    /api/coverage/summary
+ *   GET    /api/coverage/items?status=&search=&site_id=&limit=&offset=
+ *   POST   /api/coverage/ignore
+ *   DELETE /api/coverage/ignore
+ *   GET    /api/sites
  *   GET    /api/alerts
  *   GET    /api/transactions/summary
  */
@@ -24,6 +29,7 @@ require __DIR__ . '/../vendor/autoload.php';
 
 use RestockRadar\Alerts\AlertRepository;
 use RestockRadar\Analysis\ReorderAnalyzer;
+use RestockRadar\Matching\CoverageService;
 use RestockRadar\Matching\ProductMatcher;
 use RestockRadar\Storage\Database;
 use RestockRadar\Watchlist\WatchlistRepository;
@@ -180,6 +186,62 @@ if (preg_match('#^/watchlist/(\d+)/match-suggestions/reject$#', $path, $m) && $m
 
     $watchlistRepo->rejectMatch($watchlistId, $siteId, $body['raw_product_name']);
     respond(['rejected' => true]);
+}
+
+if ($path === '/coverage/summary' && $method === 'GET') {
+    $coverage = new CoverageService($pdo);
+    respond($coverage->summary());
+}
+
+if ($path === '/coverage/items' && $method === 'GET') {
+    $limit = isset($_GET['limit']) ? max(1, min(100, (int) $_GET['limit'])) : 25;
+    $offset = isset($_GET['offset']) ? max(0, (int) $_GET['offset']) : 0;
+    $search = isset($_GET['search']) && trim((string) $_GET['search']) !== '' ? trim((string) $_GET['search']) : null;
+    $status = isset($_GET['status']) && in_array($_GET['status'], ['linked', 'unmatched', 'ignored'], true) ? $_GET['status'] : null;
+    $siteId = isset($_GET['site_id']) && $_GET['site_id'] !== '' ? (int) $_GET['site_id'] : null;
+
+    $coverage = new CoverageService($pdo);
+    respond($coverage->items($limit, $offset, $status, $search, $siteId));
+}
+
+if ($path === '/sites' && $method === 'GET') {
+    respond($pdo->query('SELECT id, name FROM sites ORDER BY name')->fetchAll());
+}
+
+if ($path === '/coverage/ignore' && $method === 'POST') {
+    $body = jsonBody();
+
+    foreach (['site_name', 'raw_product_name'] as $required) {
+        if (!isset($body[$required]) || trim((string) $body[$required]) === '') {
+            respond(['error' => "{$required} is required"], 422);
+        }
+    }
+
+    $siteId = $watchlistRepo->siteIdByName($body['site_name']);
+    if ($siteId === null) {
+        respond(['error' => "Unknown site: {$body['site_name']}"], 422);
+    }
+
+    (new CoverageService($pdo))->ignore($siteId, $body['raw_product_name']);
+    respond(['ignored' => true], 201);
+}
+
+if ($path === '/coverage/ignore' && $method === 'DELETE') {
+    $body = jsonBody();
+
+    foreach (['site_name', 'raw_product_name'] as $required) {
+        if (!isset($body[$required]) || trim((string) $body[$required]) === '') {
+            respond(['error' => "{$required} is required"], 422);
+        }
+    }
+
+    $siteId = $watchlistRepo->siteIdByName($body['site_name']);
+    if ($siteId === null) {
+        respond(['error' => "Unknown site: {$body['site_name']}"], 422);
+    }
+
+    (new CoverageService($pdo))->unignore($siteId, $body['raw_product_name']);
+    respond(['ignored' => false]);
 }
 
 if ($path === '/alerts' && $method === 'GET') {

@@ -120,10 +120,13 @@ function CriteriaEditor({ product, onChange }: { product: WatchlistProduct; onCh
   );
 }
 
+const ALIASES_COLLAPSED_COUNT = 5;
+
 function MatchReview({ product, onChange }: { product: WatchlistProduct; onChange: () => void }) {
   const [suggestions, setSuggestions] = useState<MatchSuggestion[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showAllAliases, setShowAllAliases] = useState(false);
 
   const loadSuggestions = () => {
     setLoading(true);
@@ -162,25 +165,39 @@ function MatchReview({ product, onChange }: { product: WatchlistProduct; onChang
           Not linked to any purchase history yet.
         </p>
       ) : (
-        <ul className="flex flex-wrap gap-2">
-          {product.aliases.map((a) => (
-            <li
-              key={a.id}
-              className="inline-flex items-center gap-1.5 rounded-full bg-stone-100 dark:bg-stone-800 border border-stone-300 dark:border-stone-700 px-2.5 py-1 text-xs"
-            >
-              <span className="text-stone-500 dark:text-stone-400">{a.site_name}:</span> {a.raw_product_name}
-              <button
-                type="button"
-                onClick={() => removeAlias(a.id)}
-                aria-label={`Unlink ${a.raw_product_name}`}
-                title="Unlink"
-                className="text-stone-400 hover:text-red-600 ml-0.5"
+        <>
+          <ul className="space-y-1">
+            {(showAllAliases ? product.aliases : product.aliases.slice(0, ALIASES_COLLAPSED_COUNT)).map((a) => (
+              <li
+                key={a.id}
+                className="flex items-center gap-2 text-sm rounded border border-stone-200 dark:border-stone-700 px-2 py-1"
               >
-                <X size={12} />
-              </button>
-            </li>
-          ))}
-        </ul>
+                <span className="shrink-0 text-xs font-medium text-stone-500 dark:text-stone-400 bg-stone-100 dark:bg-stone-800 rounded px-1.5 py-0.5">
+                  {a.site_name}
+                </span>
+                <span className="flex-1 min-w-0">{a.raw_product_name}</span>
+                <button
+                  type="button"
+                  onClick={() => removeAlias(a.id)}
+                  aria-label={`Unlink ${a.raw_product_name}`}
+                  title="Unlink"
+                  className="shrink-0 p-1 rounded text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                >
+                  <X size={14} />
+                </button>
+              </li>
+            ))}
+          </ul>
+          {product.aliases.length > ALIASES_COLLAPSED_COUNT && (
+            <button
+              type="button"
+              onClick={() => setShowAllAliases((v) => !v)}
+              className="text-sm text-brand-600 dark:text-brand-400 hover:underline"
+            >
+              {showAllAliases ? 'Show fewer' : `Show all ${product.aliases.length}`}
+            </button>
+          )}
+        </>
       )}
 
       {suggestions === null && (

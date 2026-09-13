@@ -57,6 +57,17 @@ CREATE TABLE IF NOT EXISTS watchlist_product_rejected_matches (
     PRIMARY KEY (watchlist_product_id, site_id, raw_product_name)
 );
 
+-- Purchase-history items marked "never going to be a watchlist product" (one-off Amazon DVD
+-- purchases, etc.) so they stop cluttering the coverage triage view. Global, not tied to any
+-- one watchlist product — unlike watchlist_product_rejected_matches, which is a "not for THIS
+-- product" rejection and leaves the item open to matching something else.
+CREATE TABLE IF NOT EXISTS ignored_purchase_items (
+    site_id           INTEGER NOT NULL REFERENCES sites(id),
+    raw_product_name  TEXT NOT NULL,
+    ignored_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (site_id, raw_product_name)
+);
+
 -- Stage 3: unified purchase history, loaded from transaction_log.csv (kept out of git; see .gitignore)
 CREATE TABLE IF NOT EXISTS transactions (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,

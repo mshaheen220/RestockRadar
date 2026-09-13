@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import { Radar } from 'lucide-react';
+import CoverageView from './components/CoverageView';
 import Dashboard from './components/Dashboard';
 import ThemeSwitcher from './components/ThemeSwitcher';
 import VersionBadge from './components/VersionBadge';
 import WatchlistManager from './components/WatchlistManager';
 
-type Tab = 'dashboard' | 'manage';
+type Tab = 'dashboard' | 'manage' | 'coverage';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'manage', label: 'Manage Watchlist' },
+  { id: 'coverage', label: 'Coverage' },
 ];
 
 export default function App() {
@@ -45,7 +47,11 @@ export default function App() {
         </nav>
         <ThemeSwitcher />
       </header>
-      <main className="p-4 sm:p-6">{tab === 'dashboard' ? <Dashboard /> : <WatchlistManager />}</main>
+      <main className="p-4 sm:p-6">
+        {tab === 'dashboard' && <Dashboard />}
+        {tab === 'manage' && <WatchlistManager />}
+        {tab === 'coverage' && <CoverageView />}
+      </main>
     </div>
   );
 }

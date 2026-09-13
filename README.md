@@ -21,7 +21,11 @@ Five-stage pipeline, single direction:
    + `backend/src/Matching/ProductMatcher.php` (suggests links between a watchlist product and the raw
    `product_name` strings in purchase history, using word overlap plus the "what matters" criteria as
    scoring/filtering signal — deterministic string matching, not ML; a person reviews and accepts/rejects
-   every suggestion via `/watchlist/{id}/match-suggestions`, nothing is linked automatically).
+   every suggestion via `/watchlist/{id}/match-suggestions`, nothing is linked automatically)
+   + `backend/src/Matching/CoverageService.php` (the reverse direction: every distinct purchase-history
+   item annotated with its status — linked/unmatched/ignored — filterable by status/site/search via
+   `/coverage/items`, so the same **Coverage** tab both triages new items and corrects existing links,
+   e.g. unlinking something a brand-only match got wrong).
 5. **Alerts & dashboard** — `backend/src/Alerts` (API) + `frontend/` (React + TS + Tailwind dashboard).
 
 ## Status
@@ -36,6 +40,10 @@ Five-stage pipeline, single direction:
   produce false positives across similar products (e.g. "Chobani Oatmilk" surfacing under a dairy yogurt
   watchlist entry just because the brand matches) — that's expected; it's why suggestions need a person
   to confirm rather than auto-linking.
+- The Coverage tab surfaces real gaps in the data: on the actual `transaction_log.csv`, only 7 watchlist
+  products exist against ~3,700 distinct unmatched item names — high-frequency items like "Fresh Banana,
+  Each" (121×) show up unmatched simply because nothing on the watchlist covers produce yet, not because
+  matching failed.
 - Stage 2 (live site fetchers) is **intentionally deferred** — no live fetcher exists for any site yet.
   `backend/src/Fetchers/SiteFetcher.php` documents the contract future fetchers should implement.
 - Deal/all-time-low detection and actually populating `alerts` automatically are not built yet — the
