@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Check, Pencil, Power, PowerOff, Trash2, X } from 'lucide-react';
 import { watchlistApi, type Importance, type MatchSuggestion, type WatchlistProduct } from '../api';
 
 const IMPORTANCE_LABEL: Record<Importance, string> = {
@@ -56,9 +57,10 @@ function CriteriaEditor({ product, onChange }: { product: WatchlistProduct; onCh
               type="button"
               onClick={() => removeCriterion(c.id)}
               aria-label={`Remove ${c.attribute_key} criterion`}
+              title="Remove"
               className="text-stone-400 hover:text-red-600 ml-0.5"
             >
-              ×
+              <X size={12} />
             </button>
           </li>
         ))}
@@ -171,9 +173,10 @@ function MatchReview({ product, onChange }: { product: WatchlistProduct; onChang
                 type="button"
                 onClick={() => removeAlias(a.id)}
                 aria-label={`Unlink ${a.raw_product_name}`}
+                title="Unlink"
                 className="text-stone-400 hover:text-red-600 ml-0.5"
               >
-                ×
+                <X size={12} />
               </button>
             </li>
           ))}
@@ -204,12 +207,24 @@ function MatchReview({ product, onChange }: { product: WatchlistProduct; onChang
                     ({s.transaction_count}× · {Math.round(s.score * 100)}% match)
                   </span>
                 </span>
-                <span className="flex gap-2 shrink-0">
-                  <button type="button" onClick={() => accept(s)} className="text-brand-600 dark:text-brand-400 hover:underline">
-                    Accept
+                <span className="flex gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => accept(s)}
+                    aria-label={`Accept match: ${s.raw_product_name}`}
+                    title="Accept match"
+                    className="p-1.5 rounded text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-800/40"
+                  >
+                    <Check size={16} />
                   </button>
-                  <button type="button" onClick={() => reject(s)} className="text-stone-500 hover:underline">
-                    Dismiss
+                  <button
+                    type="button"
+                    onClick={() => reject(s)}
+                    aria-label={`Dismiss match: ${s.raw_product_name}`}
+                    title="Dismiss match"
+                    className="p-1.5 rounded text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
+                  >
+                    <X size={16} />
                   </button>
                 </span>
               </li>
@@ -314,15 +329,33 @@ function ProductRow({ product, onChange }: { product: WatchlistProduct; onChange
         )}
 
         {!editing && (
-          <div className="flex gap-2 text-sm">
-            <button type="button" onClick={() => setEditing(true)} className="text-brand-600 dark:text-brand-400 hover:underline">
-              Edit
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              aria-label={`Edit ${product.display_name}`}
+              title="Edit"
+              className="p-1.5 rounded text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-800/40"
+            >
+              <Pencil size={16} />
             </button>
-            <button type="button" onClick={toggleActive} className="text-stone-500 hover:underline">
-              {product.active ? 'Deactivate' : 'Activate'}
+            <button
+              type="button"
+              onClick={toggleActive}
+              aria-label={product.active ? `Deactivate ${product.display_name}` : `Activate ${product.display_name}`}
+              title={product.active ? 'Deactivate' : 'Activate'}
+              className="p-1.5 rounded text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
+            >
+              {product.active ? <PowerOff size={16} /> : <Power size={16} />}
             </button>
-            <button type="button" onClick={remove} className="text-red-600 hover:underline">
-              Remove
+            <button
+              type="button"
+              onClick={remove}
+              aria-label={`Remove ${product.display_name}`}
+              title="Remove"
+              className="p-1.5 rounded text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+            >
+              <Trash2 size={16} />
             </button>
           </div>
         )}
