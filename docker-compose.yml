@@ -1,0 +1,23 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - '8734:8734'
+    volumes:
+      - ./backend:/app
+      - ./transaction_log.csv:/data/transaction_log.csv:ro
+    environment:
+      - RESTOCKRADAR_DB_PATH=/app/database/restockradar.sqlite
+      - RESTOCKRADAR_ALLOWED_ORIGIN=http://localhost:5734
+
+  frontend:
+    build: ./frontend
+    ports:
+      - '5734:5734'
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8734/api
+    depends_on:
+      - backend

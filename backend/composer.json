@@ -1,0 +1,14 @@
+{
+    "name": "mshaheen220/restockradar-backend",
+    "description": "RestockRadar backend: SQLite-backed price/purchase history, reorder-interval and deal-detection API.",
+    "type": "project",
+    "license": "UNLICENSED",
+    "require": {
+        "php": ">=8.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "RestockRadar\\": "src/"
+        }
+    }
+}

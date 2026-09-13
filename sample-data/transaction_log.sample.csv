@@ -1,0 +1,11 @@
+date,site,order_id,product_name,quantity,unit_price,total_price,shipping_charge,product_id,category,delivery_status,recent_24mo
+2025-01-05,Walmart,W-1000001,Planet Oat Oat Milk Original 52oz,2.0,4.48,8.96,0.0,WMT-OAT-52,,Delivered,True
+2025-01-12,Walmart,W-1000002,Chobani Non-Fat Greek Yogurt 32oz,1.0,5.98,5.98,0.0,WMT-YOG-32,,Delivered,True
+2025-01-19,Walmart,W-1000003,Coffee mate Coconut Creme Creamer 32oz,1.0,3.98,3.98,0.0,WMT-CRM-32,,Delivered,True
+2025-02-02,Walmart,W-1000004,Planet Oat Oat Milk Original 52oz,2.0,4.48,8.96,0.0,WMT-OAT-52,,Delivered,True
+2025-02-10,Costco,C-2000001,Donut Shop K-Cups 80ct,1.0,32.99,32.99,0.0,COST-KCUP-80,,Picked Up,True
+2025-02-14,Amazon,112-2000002-0000002,Bounty Paper Towels 12 Double Rolls,1.0,24.99,24.99,0.0,B00SAMPLE1,Household,Shipped,True
+2025-03-01,Chewy,CH-3000001,Friskies Extra Gravy Chunky Variety Pack 24ct (4-pack),4.0,17.98,71.92,0.0,CHW-FRISKIES-24,,Delivered,True
+2025-03-15,Walmart,W-1000005,Chobani Non-Fat Greek Yogurt 32oz,1.0,5.98,5.98,0.0,WMT-YOG-32,,Delivered,True
+2025-04-01,Costco,C-2000002,Donut Shop K-Cups 80ct,1.0,32.99,32.99,0.0,COST-KCUP-80,,Picked Up,True
+2025-04-20,Amazon,112-2000003-0000003,Charmin Ultra Soft Toilet Paper 24 Rolls,1.0,21.49,21.49,4.99,B00SAMPLE2,Household,Shipped,True

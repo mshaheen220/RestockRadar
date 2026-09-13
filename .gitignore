@@ -1,0 +1,26 @@
+# Real personal purchase data — never commit (repo is public)
+transaction_log.csv
+/backend/database/*.sqlite
+/backend/database/*.sqlite-journal
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+npm-debug.log*
+
+# PHP / backend
+backend/vendor/
+composer.lock
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+*.swp
+
+# Docker
+docker-compose.override.yml
