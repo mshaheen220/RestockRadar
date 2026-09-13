@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { watchlistApi, type Importance, type WatchlistProduct } from '../api';
+import { watchlistApi, type Importance, type MatchSuggestion, type WatchlistProduct } from '../api';
 
 const IMPORTANCE_LABEL: Record<Importance, string> = {
   must_match: 'Must match',
@@ -118,6 +118,112 @@ function CriteriaEditor({ product, onChange }: { product: WatchlistProduct; onCh
   );
 }
 
+function MatchReview({ product, onChange }: { product: WatchlistProduct; onChange: () => void }) {
+  const [suggestions, setSuggestions] = useState<MatchSuggestion[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadSuggestions = () => {
+    setLoading(true);
+    setError(null);
+    watchlistApi
+      .matchSuggestions(product.id)
+      .then(setSuggestions)
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
+  };
+
+  const removeAlias = async (aliasId: number) => {
+    await watchlistApi.removeAlias(product.id, aliasId);
+    onChange();
+  };
+
+  const accept = async (s: MatchSuggestion) => {
+    await watchlistApi.acceptSuggestion(product.id, { site_name: s.site_name, raw_product_name: s.raw_product_name });
+    setSuggestions((prev) => prev?.filter((x) => !(x.site_id === s.site_id && x.raw_product_name === s.raw_product_name)) ?? null);
+    onChange();
+  };
+
+  const reject = async (s: MatchSuggestion) => {
+    await watchlistApi.rejectSuggestion(product.id, { site_name: s.site_name, raw_product_name: s.raw_product_name });
+    setSuggestions((prev) => prev?.filter((x) => !(x.site_id === s.site_id && x.raw_product_name === s.raw_product_name)) ?? null);
+  };
+
+  return (
+    <div className="mt-3 space-y-2">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">
+        Purchase history matches
+      </h4>
+
+      {product.aliases.length === 0 ? (
+        <p className="text-sm text-stone-500 dark:text-stone-400">
+          Not linked to any purchase history yet.
+        </p>
+      ) : (
+        <ul className="flex flex-wrap gap-2">
+          {product.aliases.map((a) => (
+            <li
+              key={a.id}
+              className="inline-flex items-center gap-1.5 rounded-full bg-stone-100 dark:bg-stone-800 border border-stone-300 dark:border-stone-700 px-2.5 py-1 text-xs"
+            >
+              <span className="text-stone-500 dark:text-stone-400">{a.site_name}:</span> {a.raw_product_name}
+              <button
+                type="button"
+                onClick={() => removeAlias(a.id)}
+                aria-label={`Unlink ${a.raw_product_name}`}
+                className="text-stone-400 hover:text-red-600 ml-0.5"
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {suggestions === null && (
+        <button type="button" onClick={loadSuggestions} disabled={loading} className="text-sm text-brand-600 dark:text-brand-400 hover:underline">
+          {loading ? 'Looking…' : 'Find matches in purchase history'}
+        </button>
+      )}
+      {error && <p className="text-red-600 text-sm">{error}</p>}
+
+      {suggestions !== null && (
+        <div className="space-y-1">
+          {suggestions.length === 0 && (
+            <p className="text-sm text-stone-500 dark:text-stone-400">No likely matches found.</p>
+          )}
+          <ul className="space-y-1">
+            {suggestions.map((s) => (
+              <li
+                key={`${s.site_id}-${s.raw_product_name}`}
+                className="flex items-center justify-between gap-2 text-sm rounded border border-stone-200 dark:border-stone-700 px-2 py-1"
+              >
+                <span>
+                  <span className="text-stone-500 dark:text-stone-400">{s.site_name}:</span> {s.raw_product_name}{' '}
+                  <span className="text-stone-400 dark:text-stone-500">
+                    ({s.transaction_count}× · {Math.round(s.score * 100)}% match)
+                  </span>
+                </span>
+                <span className="flex gap-2 shrink-0">
+                  <button type="button" onClick={() => accept(s)} className="text-brand-600 dark:text-brand-400 hover:underline">
+                    Accept
+                  </button>
+                  <button type="button" onClick={() => reject(s)} className="text-stone-500 hover:underline">
+                    Dismiss
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <button type="button" onClick={loadSuggestions} disabled={loading} className="text-sm text-brand-600 dark:text-brand-400 hover:underline">
+            {loading ? 'Looking…' : 'Refresh matches'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProductRow({ product, onChange }: { product: WatchlistProduct; onChange: () => void }) {
   const [editing, setEditing] = useState(false);
   const [displayName, setDisplayName] = useState(product.display_name);
@@ -223,6 +329,7 @@ function ProductRow({ product, onChange }: { product: WatchlistProduct; onChange
       </div>
 
       <CriteriaEditor product={product} onChange={onChange} />
+      <MatchReview product={product} onChange={onChange} />
     </li>
   );
 }

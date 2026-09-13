@@ -16,18 +16,26 @@ Five-stage pipeline, single direction:
 2. **Site fetchers** — `backend/src/Fetchers` — **not implemented yet** (deferred; see Status below).
 3. **Price & purchase history** — SQLite (`backend/database/schema.sql`), loaded from `transaction_log.csv`
    via `backend/scripts/import_transactions.php`.
-4. **Deal & habit analysis** — `backend/src/Analysis/ReorderAnalyzer.php` — reorder-interval calculation
-   with recency-weighted averaging (half-life decay), so pre-move-out household size doesn't skew results.
+4. **Deal & habit analysis** — `backend/src/Analysis/ReorderAnalyzer.php` (reorder-interval calculation
+   with recency-weighted averaging, half-life decay, so pre-move-out household size doesn't skew results)
+   + `backend/src/Matching/ProductMatcher.php` (suggests links between a watchlist product and the raw
+   `product_name` strings in purchase history, using word overlap plus the "what matters" criteria as
+   scoring/filtering signal — deterministic string matching, not ML; a person reviews and accepts/rejects
+   every suggestion via `/watchlist/{id}/match-suggestions`, nothing is linked automatically).
 5. **Alerts & dashboard** — `backend/src/Alerts` (API) + `frontend/` (React + TS + Tailwind dashboard).
 
 ## Status
 
 - Stages 1, 3, 4, 5 scaffolded: watchlist CRUD (with a "what matters" criteria editor — see
   `frontend/src/components/WatchlistManager.tsx`), SQLite schema + CSV import, reorder-interval analysis,
-  a minimal JSON API, and a dashboard UI (summary stats, alerts list, watchlist table).
-- Watchlist products are still matched to purchase-history rows by hand (`product_aliases`, one exact
-  string per site) — the "what matters" criteria aren't consumed by any matching logic yet, since that
-  needs the fuzzy product-matching work in `PROJECT-BRIEF.md`'s next steps first.
+  fuzzy match suggestions (accept/reject review UI, same component), a minimal JSON API, and a dashboard
+  UI (summary stats, alerts list, watchlist table).
+- Fuzzy matching is a *suggestion* layer only — accepting a suggestion writes a normal row into
+  `product_aliases`, same as manual aliasing. A rejected suggestion is remembered
+  (`watchlist_product_rejected_matches`) so it won't resurface for that product. Brand-only criteria can
+  produce false positives across similar products (e.g. "Chobani Oatmilk" surfacing under a dairy yogurt
+  watchlist entry just because the brand matches) — that's expected; it's why suggestions need a person
+  to confirm rather than auto-linking.
 - Stage 2 (live site fetchers) is **intentionally deferred** — no live fetcher exists for any site yet.
   `backend/src/Fetchers/SiteFetcher.php` documents the contract future fetchers should implement.
 - Deal/all-time-low detection and actually populating `alerts` automatically are not built yet — the

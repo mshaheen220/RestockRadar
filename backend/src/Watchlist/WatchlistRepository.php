@@ -24,6 +24,7 @@ final class WatchlistRepository
 
         foreach ($products as &$product) {
             $product['criteria'] = $this->criteriaFor((int) $product['id']);
+            $product['aliases'] = $this->aliasesFor((int) $product['id']);
         }
 
         return $products;
@@ -42,6 +43,7 @@ final class WatchlistRepository
         }
 
         $product['criteria'] = $this->criteriaFor($id);
+        $product['aliases'] = $this->aliasesFor($id);
 
         return $product;
     }
@@ -133,10 +135,11 @@ final class WatchlistRepository
     public function aliasesFor(int $watchlistProductId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT pa.raw_product_name, pa.raw_product_id, s.name AS site_name
+            'SELECT pa.id, pa.raw_product_name, pa.raw_product_id, pa.site_id, s.name AS site_name
              FROM product_aliases pa
              JOIN sites s ON s.id = pa.site_id
-             WHERE pa.watchlist_product_id = :id'
+             WHERE pa.watchlist_product_id = :id
+             ORDER BY s.name ASC, pa.raw_product_name ASC'
         );
         $stmt->execute(['id' => $watchlistProductId]);
 
@@ -154,6 +157,36 @@ final class WatchlistRepository
             'site_id' => $siteId,
             'raw_product_name' => $rawProductName,
             'raw_product_id' => $rawProductId,
+        ]);
+    }
+
+    public function removeAlias(int $watchlistProductId, int $aliasId): void
+    {
+        $stmt = $this->pdo->prepare(
+            'DELETE FROM product_aliases WHERE id = :id AND watchlist_product_id = :wp_id'
+        );
+        $stmt->execute(['id' => $aliasId, 'wp_id' => $watchlistProductId]);
+    }
+
+    public function siteIdByName(string $siteName): ?int
+    {
+        $stmt = $this->pdo->prepare('SELECT id FROM sites WHERE name = :name');
+        $stmt->execute(['name' => $siteName]);
+        $id = $stmt->fetchColumn();
+
+        return $id === false ? null : (int) $id;
+    }
+
+    public function rejectMatch(int $watchlistProductId, int $siteId, string $rawProductName): void
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT OR IGNORE INTO watchlist_product_rejected_matches (watchlist_product_id, site_id, raw_product_name)
+             VALUES (:wp_id, :site_id, :raw_product_name)'
+        );
+        $stmt->execute([
+            'wp_id' => $watchlistProductId,
+            'site_id' => $siteId,
+            'raw_product_name' => $rawProductName,
         ]);
     }
 }

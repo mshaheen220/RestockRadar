@@ -10,6 +10,10 @@
  *   GET    /api/watchlist/{id}/reorder-stats
  *   POST   /api/watchlist/{id}/criteria
  *   DELETE /api/watchlist/{id}/criteria/{criterionId}
+ *   DELETE /api/watchlist/{id}/aliases/{aliasId}
+ *   GET    /api/watchlist/{id}/match-suggestions
+ *   POST   /api/watchlist/{id}/match-suggestions/accept
+ *   POST   /api/watchlist/{id}/match-suggestions/reject
  *   GET    /api/alerts
  *   GET    /api/transactions/summary
  */
@@ -20,6 +24,7 @@ require __DIR__ . '/../vendor/autoload.php';
 
 use RestockRadar\Alerts\AlertRepository;
 use RestockRadar\Analysis\ReorderAnalyzer;
+use RestockRadar\Matching\ProductMatcher;
 use RestockRadar\Storage\Database;
 use RestockRadar\Watchlist\WatchlistRepository;
 
@@ -119,6 +124,62 @@ if (preg_match('#^/watchlist/(\d+)/criteria/(\d+)$#', $path, $m) && $method === 
     [$watchlistId, $criterionId] = [(int) $m[1], (int) $m[2]];
     $watchlistRepo->deleteCriterion($watchlistId, $criterionId);
     respond($watchlistRepo->find($watchlistId));
+}
+
+if (preg_match('#^/watchlist/(\d+)/aliases/(\d+)$#', $path, $m) && $method === 'DELETE') {
+    [$watchlistId, $aliasId] = [(int) $m[1], (int) $m[2]];
+    $watchlistRepo->removeAlias($watchlistId, $aliasId);
+    respond($watchlistRepo->find($watchlistId));
+}
+
+if (preg_match('#^/watchlist/(\d+)/match-suggestions$#', $path, $m) && $method === 'GET') {
+    $watchlistId = (int) $m[1];
+    $product = $watchlistRepo->find($watchlistId);
+
+    if ($product === null) {
+        respond(['error' => 'Not found'], 404);
+    }
+
+    $matcher = new ProductMatcher($pdo);
+    respond($matcher->suggestMatches($product));
+}
+
+if (preg_match('#^/watchlist/(\d+)/match-suggestions/accept$#', $path, $m) && $method === 'POST') {
+    $watchlistId = (int) $m[1];
+    $body = jsonBody();
+
+    foreach (['site_name', 'raw_product_name'] as $required) {
+        if (!isset($body[$required]) || trim((string) $body[$required]) === '') {
+            respond(['error' => "{$required} is required"], 422);
+        }
+    }
+
+    $siteId = $watchlistRepo->siteIdByName($body['site_name']);
+    if ($siteId === null) {
+        respond(['error' => "Unknown site: {$body['site_name']}"], 422);
+    }
+
+    $watchlistRepo->addAlias($watchlistId, $siteId, $body['raw_product_name'], null);
+    respond($watchlistRepo->find($watchlistId), 201);
+}
+
+if (preg_match('#^/watchlist/(\d+)/match-suggestions/reject$#', $path, $m) && $method === 'POST') {
+    $watchlistId = (int) $m[1];
+    $body = jsonBody();
+
+    foreach (['site_name', 'raw_product_name'] as $required) {
+        if (!isset($body[$required]) || trim((string) $body[$required]) === '') {
+            respond(['error' => "{$required} is required"], 422);
+        }
+    }
+
+    $siteId = $watchlistRepo->siteIdByName($body['site_name']);
+    if ($siteId === null) {
+        respond(['error' => "Unknown site: {$body['site_name']}"], 422);
+    }
+
+    $watchlistRepo->rejectMatch($watchlistId, $siteId, $body['raw_product_name']);
+    respond(['rejected' => true]);
 }
 
 if ($path === '/alerts' && $method === 'GET') {

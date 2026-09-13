@@ -47,6 +47,16 @@ CREATE TABLE IF NOT EXISTS product_aliases (
     UNIQUE(site_id, raw_product_name)
 );
 
+-- Suggestions a person dismissed (stage-4 fuzzy matching, see ProductMatcher) so the same
+-- (product, site, raw name) triple doesn't keep resurfacing every time suggestions are recomputed.
+CREATE TABLE IF NOT EXISTS watchlist_product_rejected_matches (
+    watchlist_product_id  INTEGER NOT NULL REFERENCES watchlist_products(id) ON DELETE CASCADE,
+    site_id               INTEGER NOT NULL REFERENCES sites(id),
+    raw_product_name      TEXT NOT NULL,
+    rejected_at           TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (watchlist_product_id, site_id, raw_product_name)
+);
+
 -- Stage 3: unified purchase history, loaded from transaction_log.csv (kept out of git; see .gitignore)
 CREATE TABLE IF NOT EXISTS transactions (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
