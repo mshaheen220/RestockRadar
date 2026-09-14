@@ -104,6 +104,27 @@ export type ChoiceEvaluation = {
   message: string | null;
 };
 
+export type DealFinderChoice = {
+  rank: number;
+  label: string;
+  site_name: string | null;
+  price: number;
+  price_currency: string | null;
+  price_captured_at: string | null;
+  unit_price: number;
+  verdict: DealVerdict;
+  message: string | null;
+};
+
+export type DealFinderProduct = {
+  id: number;
+  display_name: string;
+  unit_label: string | null;
+  target_unit_price: number | null;
+  stats: PriceStats;
+  choices: DealFinderChoice[];
+};
+
 export type Alert = {
   id: number;
   kind: string;
@@ -176,6 +197,7 @@ export const dealsApi = {
       '/deals/detect',
       { method: 'POST' },
     ),
+  finder: () => request<DealFinderProduct[]>('/deal-finder'),
 };
 
 export const coverageApi = {

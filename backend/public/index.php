@@ -9,6 +9,7 @@
  *   DELETE /api/watchlist/{id}
  *   GET    /api/watchlist/{id}/reorder-stats
  *   GET    /api/watchlist/{id}/price-stats
+ *   GET    /api/deal-finder
  *   POST   /api/deals/detect
  *   POST   /api/alerts/{id}/acknowledge
  *   POST   /api/watchlist/{id}/criteria
@@ -156,6 +157,58 @@ if (preg_match('#^/watchlist/(\d+)/price-stats$#', $path, $m) && $method === 'GE
     }
 
     respond(['stats' => $stats, 'choice_evaluations' => $choiceEvaluations]);
+}
+
+/**
+ * Answers "where should I buy this, right now" across the whole watchlist in one pass — every
+ * captured store price for every active product, cheapest first, judged against that product's
+ * own purchase history. A report you re-run any time, not a notification log: unlike /deals/detect
+ * (which only surfaces what's NEW since last check and dedupes on exact price), this always shows
+ * the full current picture, including deals you already knew about.
+ */
+if ($path === '/deal-finder' && $method === 'GET') {
+    $detector = new DealDetector($pdo);
+    $report = [];
+
+    foreach ($watchlistRepo->all() as $product) {
+        if ((int) $product['active'] !== 1) {
+            continue;
+        }
+
+        $aliases = $watchlistRepo->aliasesFor((int) $product['id']);
+        $productNames = array_column($aliases, 'raw_product_name');
+        $stats = $detector->historicalStats($productNames);
+
+        $choices = [];
+        foreach ($product['choices'] as $choice) {
+            if ($choice['price'] === null || $choice['quantity'] === null || (float) $choice['quantity'] === 0.0) {
+                continue;
+            }
+            $unitPrice = $choice['price'] / $choice['quantity'];
+            $choices[] = [
+                'rank' => $choice['rank'],
+                'label' => $choice['label'],
+                'site_name' => $choice['site_name'],
+                'price' => $choice['price'],
+                'price_currency' => $choice['price_currency'],
+                'price_captured_at' => $choice['price_captured_at'],
+                'unit_price' => round($unitPrice, 4),
+            ] + $detector->evaluate($unitPrice, $stats);
+        }
+
+        usort($choices, fn ($a, $b) => $a['unit_price'] <=> $b['unit_price']);
+
+        $report[] = [
+            'id' => $product['id'],
+            'display_name' => $product['display_name'],
+            'unit_label' => $product['unit_label'],
+            'target_unit_price' => $product['target_unit_price'],
+            'stats' => $stats,
+            'choices' => $choices,
+        ];
+    }
+
+    respond($report);
 }
 
 if (preg_match('#^/watchlist/(\d+)/criteria$#', $path, $m) && $method === 'POST') {

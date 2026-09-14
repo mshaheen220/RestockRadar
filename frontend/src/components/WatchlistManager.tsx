@@ -9,6 +9,7 @@ import {
   Plus,
   Power,
   PowerOff,
+  Search,
   Trash2,
   Wand2,
   X,
@@ -23,7 +24,7 @@ import {
   type PriceStats,
   type WatchlistProduct,
 } from '../api';
-import { formatMoney, unitPriceBadge, unitPriceBadgeClass } from '../priceUtils';
+import { daysSince, formatMoney, isStalePrice, unitPriceBadge, unitPriceBadgeClass } from '../priceUtils';
 import SiteIcon from './SiteIcon';
 
 const IMPORTANCE_LABEL: Record<Importance, string> = {
@@ -213,23 +214,33 @@ function MatchReview({ product, onChange }: { product: WatchlistProduct; onChang
               </li>
             ))}
           </ul>
-          {product.aliases.length > ALIASES_COLLAPSED_COUNT && (
-            <button
-              type="button"
-              onClick={() => setShowAllAliases((v) => !v)}
-              className="text-sm text-brand-600 dark:text-brand-400 hover:underline"
-            >
-              {showAllAliases ? 'Show fewer' : `Show all ${product.aliases.length}`}
-            </button>
-          )}
         </>
       )}
 
-      {suggestions === null && (
-        <button type="button" onClick={loadSuggestions} disabled={loading} className="text-sm text-brand-600 dark:text-brand-400 hover:underline">
-          {loading ? 'Looking…' : 'Find matches in purchase history'}
-        </button>
-      )}
+      <div className="flex flex-col items-start gap-1.5">
+        {product.aliases.length > ALIASES_COLLAPSED_COUNT && (
+          <button
+            type="button"
+            onClick={() => setShowAllAliases((v) => !v)}
+            className="inline-flex items-center gap-1 text-sm text-brand-600 dark:text-brand-400 hover:underline"
+          >
+            {showAllAliases ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            {showAllAliases ? 'Show fewer' : `Show all ${product.aliases.length}`}
+          </button>
+        )}
+
+        {suggestions === null && (
+          <button
+            type="button"
+            onClick={loadSuggestions}
+            disabled={loading}
+            className="inline-flex items-center gap-1 text-sm text-brand-600 dark:text-brand-400 hover:underline disabled:opacity-60"
+          >
+            {loading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+            {loading ? 'Looking…' : 'Find matches in purchase history'}
+          </button>
+        )}
+      </div>
       {error && <p className="text-red-600 text-sm">{error}</p>}
 
       {suggestions !== null && (
@@ -589,6 +600,14 @@ function PreferredProducts({ product, onChange }: { product: WatchlistProduct; o
                         title={choice.price_captured_at ? `Captured ${choice.price_captured_at}` : undefined}
                       >
                         {formatPrice(choice)}
+                      </span>
+                    )}
+                    {isStalePrice(choice.price_captured_at) && (
+                      <span
+                        className="ml-1.5 text-xs px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
+                        title={`Captured ${choice.price_captured_at} — recheck via the wand button or the browser extension`}
+                      >
+                        stale · {daysSince(choice.price_captured_at as string)}d
                       </span>
                     )}
                     {(() => {

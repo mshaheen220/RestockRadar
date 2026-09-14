@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { RefreshCw, X } from 'lucide-react';
 import { alertsApi, dealsApi, type Alert, type WatchlistProduct } from '../api';
+import { daysSince, isStalePrice, STALE_PRICE_DAYS } from '../priceUtils';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
 
@@ -123,6 +124,55 @@ function AlertsPanel() {
   );
 }
 
+/**
+ * A captured price is a one-time snapshot (wand/extension), not a live check — it goes stale
+ * silently, so a "good deal" verdict could be built on a price from months ago. This is a nudge,
+ * not an automated recheck: re-capturing still has to happen via the wand button or the extension.
+ */
+function PriceFreshnessPanel({ watchlist }: { watchlist: WatchlistProduct[] | null }) {
+  const dueForRecheck = (watchlist ?? []).flatMap((product) =>
+    product.choices
+      .filter((choice) => choice.price == null || isStalePrice(choice.price_captured_at))
+      .map((choice) => ({ product, choice })),
+  );
+
+  return (
+    <section
+      aria-labelledby="price-freshness-heading"
+      className="rounded-xl border border-brand-200 dark:border-brand-800 bg-white dark:bg-stone-900 p-4 sm:col-span-2"
+    >
+      <h2 id="price-freshness-heading" className="font-semibold mb-2">
+        Price checks due
+      </h2>
+
+      {watchlist === null && <p className="text-sm text-stone-500 dark:text-stone-400">Loading…</p>}
+      {watchlist && dueForRecheck.length === 0 && (
+        <p className="text-sm text-stone-500 dark:text-stone-400">All captured prices are fresh.</p>
+      )}
+      {dueForRecheck.length > 0 && (
+        <ul className="text-sm space-y-1">
+          {dueForRecheck.map(({ product, choice }) => (
+            <li key={`${product.id}-${choice.rank}`} className="flex items-center justify-between gap-2">
+              <span>
+                <span className="font-medium">{product.display_name}</span>
+                <span className="text-stone-500 dark:text-stone-400"> — {choice.label}</span>
+              </span>
+              <span className="shrink-0 text-xs text-stone-500 dark:text-stone-400">
+                {choice.price == null ? 'never captured' : `captured ${daysSince(choice.price_captured_at as string)}d ago`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <p className="mt-2 text-xs text-stone-400 dark:text-stone-500">
+        Recheck via the wand button or the browser extension — a captured price older than {STALE_PRICE_DAYS}{' '}
+        days doesn't refresh on its own.
+      </p>
+    </section>
+  );
+}
+
 export default function Dashboard() {
   const { data: watchlist, error: watchlistError } = useJson<WatchlistProduct[]>('/watchlist');
   const { data: summary, error: summaryError } = useJson<TransactionSummary>('/transactions/summary');
@@ -158,6 +208,8 @@ export default function Dashboard() {
       </section>
 
       <AlertsPanel />
+
+      <PriceFreshnessPanel watchlist={watchlist} />
 
       <section
         aria-labelledby="watchlist-heading"
