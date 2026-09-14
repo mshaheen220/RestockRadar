@@ -112,12 +112,18 @@ final class CoverageService
                     (SELECT lt.unit_price FROM transactions lt
                      WHERE lt.site_id = t.site_id AND lt.product_name = t.product_name
                      ORDER BY lt.txn_date DESC, lt.id DESC LIMIT 1) AS last_price,
+                    (SELECT lt.quantity FROM transactions lt
+                     WHERE lt.site_id = t.site_id AND lt.product_name = t.product_name
+                     ORDER BY lt.txn_date DESC, lt.id DESC LIMIT 1) AS last_quantity,
                     (SELECT lt.pack_quantity FROM transactions lt
                      WHERE lt.site_id = t.site_id AND lt.product_name = t.product_name
                      ORDER BY lt.txn_date DESC, lt.id DESC LIMIT 1) AS last_pack_quantity,
                     (SELECT lt.normalized_unit_price FROM transactions lt
                      WHERE lt.site_id = t.site_id AND lt.product_name = t.product_name
-                     ORDER BY lt.txn_date DESC, lt.id DESC LIMIT 1) AS last_normalized_unit_price
+                     ORDER BY lt.txn_date DESC, lt.id DESC LIMIT 1) AS last_normalized_unit_price,
+                    (SELECT lt.pack_quantity_source FROM transactions lt
+                     WHERE lt.site_id = t.site_id AND lt.product_name = t.product_name
+                     ORDER BY lt.txn_date DESC, lt.id DESC LIMIT 1) AS last_pack_quantity_source
              FROM transactions t
              {$joins}
              {$whereSql}
@@ -155,5 +161,135 @@ final class CoverageService
             'DELETE FROM ignored_purchase_items WHERE site_id = :site_id AND raw_product_name = :name'
         );
         $stmt->execute(['site_id' => $siteId, 'name' => $rawProductName]);
+    }
+
+    /**
+     * Corrects a garbled purchase-history name (Costco receipt-OCR truncation/merging is the
+     * usual culprit — see PROJECT-BRIEF.md) everywhere it's referenced: the transaction rows
+     * themselves, plus any alias/ignore/rejected-match rows keyed by the old name. The original
+     * OCR'd text is never touched (transactions.original_product_name), so this can't destroy
+     * history, only relabel it.
+     *
+     * @throws \RuntimeException if the new name collides with a different existing entry for
+     *         this site (e.g. `product_aliases` already has that exact name aliased elsewhere)
+     */
+    public function rename(int $siteId, string $oldName, string $newName): void
+    {
+        if (trim($newName) === '') {
+            throw new \RuntimeException('New name cannot be empty.');
+        }
+        if ($oldName === $newName) {
+            return;
+        }
+
+        $this->pdo->beginTransaction();
+
+        try {
+            foreach (
+                [
+                    ['transactions', 'product_name'],
+                    ['product_aliases', 'raw_product_name'],
+                    ['ignored_purchase_items', 'raw_product_name'],
+                    ['watchlist_product_rejected_matches', 'raw_product_name'],
+                ] as [$table, $column]
+            ) {
+                $stmt = $this->pdo->prepare(
+                    "UPDATE {$table} SET {$column} = :new_name WHERE site_id = :site_id AND {$column} = :old_name"
+                );
+                $stmt->execute(['new_name' => $newName, 'site_id' => $siteId, 'old_name' => $oldName]);
+            }
+
+            $this->pdo->commit();
+        } catch (\PDOException $e) {
+            $this->pdo->rollBack();
+
+            throw new \RuntimeException(
+                "Couldn't rename to \"{$newName}\" — it likely already exists as a different entry for this site.",
+                previous: $e,
+            );
+        }
+    }
+
+    /**
+     * Sets (or, with null, clears) a pack quantity by hand for every transaction matching this
+     * (site, name) — for cases PackQuantity::guess() has nothing to work with at all, like
+     * Costco's "POISE PLUS" (no size/count anywhere in the name). Clearing puts it back into
+     * scripts/compute_unit_prices.php's pool for a fresh automatic guess next run.
+     */
+    public function setPackQuantity(int $siteId, string $productName, ?float $packQuantity): void
+    {
+        if ($packQuantity !== null && $packQuantity <= 0) {
+            throw new \RuntimeException('Pack quantity must be greater than zero.');
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT id, unit_price FROM transactions WHERE site_id = :site_id AND product_name = :name'
+        );
+        $stmt->execute(['site_id' => $siteId, 'name' => $productName]);
+        $rows = $stmt->fetchAll();
+
+        $update = $this->pdo->prepare(
+            'UPDATE transactions SET pack_quantity = :pack_quantity, normalized_unit_price = :normalized, pack_quantity_source = :source
+             WHERE id = :id'
+        );
+
+        foreach ($rows as $row) {
+            $update->execute([
+                'pack_quantity' => $packQuantity,
+                'normalized' => $packQuantity !== null ? (float) $row['unit_price'] / $packQuantity : null,
+                'source' => $packQuantity !== null ? 'user' : null,
+                'id' => $row['id'],
+            ]);
+        }
+    }
+
+    /**
+     * Corrects the quantity/price the CSV import (or the underlying receipt-OCR) got wrong for
+     * one specific purchase — deliberately restricted to (site, name) groups with exactly one
+     * transaction, since a group with several purchases has no single "the price" to correct;
+     * editing an individual purchase within a multi-purchase group isn't built yet (would need a
+     * drill-down view Coverage doesn't have). total_price is recomputed as quantity × unit_price
+     * rather than taken as separate input, to avoid the two silently disagreeing.
+     *
+     * @throws \RuntimeException if the (site, name) doesn't resolve to exactly one transaction
+     */
+    public function correctSingleTransaction(int $siteId, string $productName, float $quantity, float $unitPrice): void
+    {
+        if ($quantity <= 0 || $unitPrice < 0) {
+            throw new \RuntimeException('Quantity must be greater than zero and price cannot be negative.');
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT id, pack_quantity FROM transactions WHERE site_id = :site_id AND product_name = :name'
+        );
+        $stmt->execute(['site_id' => $siteId, 'name' => $productName]);
+        $rows = $stmt->fetchAll();
+
+        if (count($rows) !== 1) {
+            throw new \RuntimeException(
+                "This groups {$this->pluralize(count($rows))} — editing price/quantity is only available for a single purchase."
+            );
+        }
+
+        $row = $rows[0];
+        $packQuantity = $row['pack_quantity'] !== null ? (float) $row['pack_quantity'] : null;
+
+        $update = $this->pdo->prepare(
+            'UPDATE transactions SET quantity = :quantity, unit_price = :unit_price, total_price = :total_price,
+                normalized_unit_price = :normalized
+             WHERE id = :id'
+        );
+        $update->execute([
+            'quantity' => $quantity,
+            'unit_price' => $unitPrice,
+            'total_price' => $quantity * $unitPrice,
+            'normalized' => $packQuantity !== null ? $unitPrice / $packQuantity : null,
+            'id' => $row['id'],
+        ]);
+    }
+
+    private function pluralize(int $count): string
+    {
+        return $count === 1 ? '1 purchase' : "{$count} purchases";
     }
 }

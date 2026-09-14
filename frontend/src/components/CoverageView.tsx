@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Eye, EyeOff, Link2, Unlink } from 'lucide-react';
+import { Check, Eye, EyeOff, Link2, Pencil, Unlink, X } from 'lucide-react';
 import {
   coverageApi,
   sitesApi,
@@ -133,7 +133,17 @@ function AssignControl({ item, products, onChanged }: { item: CoverageItem; prod
   );
 }
 
-function RowActions({ item, products, onChanged }: { item: CoverageItem; products: WatchlistProduct[]; onChanged: () => void }) {
+function RowActions({
+  item,
+  products,
+  onChanged,
+  onEdit,
+}: {
+  item: CoverageItem;
+  products: WatchlistProduct[];
+  onChanged: () => void;
+  onEdit: () => void;
+}) {
   const unlink = async () => {
     if (item.watchlist_product_id === null || item.alias_id === null) return;
     await watchlistApi.removeAlias(item.watchlist_product_id, item.alias_id);
@@ -150,6 +160,18 @@ function RowActions({ item, products, onChanged }: { item: CoverageItem; product
     onChanged();
   };
 
+  const editButton = (
+    <button
+      type="button"
+      onClick={onEdit}
+      aria-label={`Edit ${item.product_name}`}
+      title="Edit name, pack quantity, or (for a single purchase) price paid"
+      className="p-1.5 rounded text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
+    >
+      <Pencil size={16} />
+    </button>
+  );
+
   if (item.status === 'linked') {
     return (
       <div className="flex items-center gap-2">
@@ -163,21 +185,25 @@ function RowActions({ item, products, onChanged }: { item: CoverageItem; product
         >
           <Unlink size={16} />
         </button>
+        {editButton}
       </div>
     );
   }
 
   if (item.status === 'ignored') {
     return (
-      <button
-        type="button"
-        onClick={unignore}
-        aria-label={`Un-ignore ${item.product_name}`}
-        title="Un-ignore"
-        className="p-1.5 rounded text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-800/40 inline-flex items-center gap-1"
-      >
-        <Eye size={16} />
-      </button>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={unignore}
+          aria-label={`Un-ignore ${item.product_name}`}
+          title="Un-ignore"
+          className="p-1.5 rounded text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-800/40 inline-flex items-center gap-1"
+        >
+          <Eye size={16} />
+        </button>
+        {editButton}
+      </div>
     );
   }
 
@@ -193,7 +219,189 @@ function RowActions({ item, products, onChanged }: { item: CoverageItem; product
       >
         <EyeOff size={16} />
       </button>
+      {editButton}
     </div>
+  );
+}
+
+/**
+ * A receipt-OCR'd name can be garbled beyond repair for auto-guessing (Costco's "POISE PLUS" has
+ * no size anywhere in it) or just wrong (merged text from a neighboring line). This lets a person
+ * fix the name and/or set the pack quantity by hand — both apply to every transaction sharing
+ * this exact (site, name), same as everything else in Coverage.
+ */
+function RowEditForm({ item, onDone }: { item: CoverageItem; onDone: () => void }) {
+  const [name, setName] = useState(item.product_name);
+  const [packQuantity, setPackQuantity] = useState(item.last_pack_quantity != null ? String(item.last_pack_quantity) : '');
+  const [quantityBought, setQuantityBought] = useState(item.last_quantity != null ? String(item.last_quantity) : '');
+  const [unitPrice, setUnitPrice] = useState(item.last_price != null ? String(item.last_price) : '');
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // A group with more than one purchase has no single "the price" to correct — editing an
+  // individual purchase within a multi-purchase group would need a drill-down view Coverage
+  // doesn't have yet.
+  const canEditTransaction = item.transaction_count === 1;
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const trimmedName = name.trim();
+      if (trimmedName && trimmedName !== item.product_name) {
+        await coverageApi.rename({ site_name: item.site_name, raw_product_name: item.product_name, new_name: trimmedName });
+      }
+
+      const currentName = trimmedName || item.product_name;
+      const parsedQuantity = packQuantity.trim() ? Number(packQuantity) : null;
+      if (packQuantity.trim() && Number.isNaN(parsedQuantity)) {
+        setError('Pack quantity must be a number.');
+        setSaving(false);
+        return;
+      }
+      if (parsedQuantity !== item.last_pack_quantity) {
+        await coverageApi.setPackQuantity({ site_name: item.site_name, raw_product_name: currentName, pack_quantity: parsedQuantity });
+      }
+
+      if (canEditTransaction) {
+        const parsedQtyBought = quantityBought.trim() ? Number(quantityBought) : null;
+        const parsedPrice = unitPrice.trim() ? Number(unitPrice) : null;
+        if (quantityBought.trim() && Number.isNaN(parsedQtyBought)) {
+          setError('Quantity bought must be a number.');
+          setSaving(false);
+          return;
+        }
+        if (unitPrice.trim() && Number.isNaN(parsedPrice)) {
+          setError('Price must be a number.');
+          setSaving(false);
+          return;
+        }
+        if (parsedQtyBought !== item.last_quantity || parsedPrice !== item.last_price) {
+          if (parsedQtyBought === null || parsedPrice === null) {
+            setError('Quantity bought and price are both required.');
+            setSaving(false);
+            return;
+          }
+          await coverageApi.correctTransaction({
+            site_name: item.site_name,
+            raw_product_name: currentName,
+            quantity: parsedQtyBought,
+            unit_price: parsedPrice,
+          });
+        }
+      }
+
+      onDone();
+    } catch (err) {
+      setError((err as Error).message);
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <td className="py-1.5 pr-4" colSpan={2}>
+        <label htmlFor={`edit-name-${item.site_id}-${item.product_name}`} className="sr-only">
+          Product name
+        </label>
+        <input
+          id={`edit-name-${item.site_id}-${item.product_name}`}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          autoFocus
+          className="w-full rounded border border-brand-300 dark:border-brand-700 bg-white dark:bg-stone-950 px-2 py-1 text-sm"
+        />
+        {error && <p className="text-red-600 text-xs mt-1">{error}</p>}
+      </td>
+      <td className="py-1.5 pr-4" />
+      <td className="py-1.5 pr-4">
+        <label htmlFor={`edit-qty-${item.site_id}-${item.product_name}`} className="sr-only">
+          Units per package
+        </label>
+        <input
+          id={`edit-qty-${item.site_id}-${item.product_name}`}
+          type="number"
+          step="any"
+          min="0"
+          inputMode="decimal"
+          value={packQuantity}
+          onChange={(e) => setPackQuantity(e.target.value)}
+          placeholder="units/pkg, e.g. 80"
+          title="Units per package (for unit price)"
+          className="w-20 rounded border border-brand-300 dark:border-brand-700 bg-white dark:bg-stone-950 px-2 py-1 text-sm"
+        />
+      </td>
+      <td className="py-1.5 pr-4">
+        {canEditTransaction ? (
+          <>
+            <label htmlFor={`edit-price-${item.site_id}-${item.product_name}`} className="sr-only">
+              Price paid
+            </label>
+            <input
+              id={`edit-price-${item.site_id}-${item.product_name}`}
+              type="number"
+              step="0.01"
+              min="0"
+              inputMode="decimal"
+              value={unitPrice}
+              onChange={(e) => setUnitPrice(e.target.value)}
+              placeholder="Price paid"
+              title="Price paid"
+              className="w-20 rounded border border-brand-300 dark:border-brand-700 bg-white dark:bg-stone-950 px-2 py-1 text-sm"
+            />
+          </>
+        ) : (
+          <span className="text-xs text-stone-400 dark:text-stone-500" title="This groups multiple purchases — pick one purchase to correct isn't built yet">
+            (multiple purchases)
+          </span>
+        )}
+      </td>
+      <td className="py-1.5 pr-4">
+        {canEditTransaction && (
+          <>
+            <label htmlFor={`edit-bought-${item.site_id}-${item.product_name}`} className="sr-only">
+              How many bought
+            </label>
+            <input
+              id={`edit-bought-${item.site_id}-${item.product_name}`}
+              type="number"
+              step="any"
+              min="0"
+              inputMode="decimal"
+              value={quantityBought}
+              onChange={(e) => setQuantityBought(e.target.value)}
+              placeholder="How many bought"
+              title="How many bought"
+              className="w-20 rounded border border-brand-300 dark:border-brand-700 bg-white dark:bg-stone-950 px-2 py-1 text-sm"
+            />
+          </>
+        )}
+      </td>
+      <td className="py-1.5 pr-4 text-stone-500 dark:text-stone-400">{item.last_purchased}</td>
+      <td className="py-1.5">
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving}
+            aria-label="Save changes"
+            title="Save"
+            className="p-1.5 rounded text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-800/40 disabled:opacity-40"
+          >
+            <Check size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={onDone}
+            aria-label="Cancel editing"
+            title="Cancel"
+            className="p-1.5 rounded text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      </td>
+    </>
   );
 }
 
@@ -290,6 +498,7 @@ export default function CoverageView() {
   const [searchInput, setSearchInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [editingKey, setEditingKey] = useState<string | null>(null);
 
   const loadSummary = () => {
     coverageApi.summary().then(setSummary).catch((err: Error) => setError(err.message));
@@ -480,6 +689,7 @@ export default function CoverageView() {
                     <th scope="col" className="py-1 pr-4">Item</th>
                     <th scope="col" className="py-1 pr-4">Site</th>
                     <th scope="col" className="py-1 pr-4">Status</th>
+                    <th scope="col" className="py-1 pr-4">Pack qty</th>
                     <th scope="col" className="py-1 pr-4">Last price</th>
                     <th scope="col" className="py-1 pr-4">Times bought</th>
                     <th scope="col" className="py-1 pr-4">Last bought</th>
@@ -498,48 +708,70 @@ export default function CoverageView() {
                           className="accent-brand-500"
                         />
                       </td>
-                      <td className="py-1.5 pr-4">{item.product_name}</td>
-                      <td className="py-1.5 pr-4 text-stone-500 dark:text-stone-400">
-                        <span className="inline-flex items-center gap-1">
-                          <SiteIcon name={item.site_name} />
-                          {item.site_name}
-                        </span>
-                      </td>
-                      <td className="py-1.5 pr-4">
-                        <span className={`px-2 py-0.5 rounded-full text-xs ${STATUS_PILL[item.status]}`}>{item.status}</span>
-                      </td>
-                      <td className="py-1.5 pr-4">
-                        {item.last_price != null && <span className="text-brand-700 dark:text-brand-400 font-medium">{formatMoney(item.last_price)}</span>}
-                        {(() => {
-                          const badge = unitPriceBadge({
-                            price: item.last_price,
-                            quantity: item.last_pack_quantity,
-                            unitLabel: item.linked_unit_label,
-                            targetUnitPrice: item.linked_target_unit_price,
-                          });
-                          if (!badge) return null;
-                          return (
-                            <span
-                              className={'ml-1.5 text-xs px-1.5 py-0.5 rounded whitespace-nowrap ' + unitPriceBadgeClass(badge.isGoodDeal)}
-                              title={
-                                item.linked_target_unit_price != null
-                                  ? `Target: $${item.linked_target_unit_price}${item.linked_unit_label ? `/${item.linked_unit_label}` : ''}`
-                                  : item.status === 'linked'
-                                    ? 'Set a target unit price on this product to flag good deals'
-                                    : 'Link this item to a watchlist product to compare against its target price'
-                              }
-                            >
-                              {badge.text}
+                      {editingKey === itemKey(item) ? (
+                        <RowEditForm item={item} onDone={() => { setEditingKey(null); refreshAll(); }} />
+                      ) : (
+                        <>
+                          <td className="py-1.5 pr-4">{item.product_name}</td>
+                          <td className="py-1.5 pr-4 text-stone-500 dark:text-stone-400">
+                            <span className="inline-flex items-center gap-1">
+                              <SiteIcon name={item.site_name} />
+                              {item.site_name}
                             </span>
-                          );
-                        })()}
-                        {item.last_price == null && <span className="text-stone-400 dark:text-stone-500">—</span>}
-                      </td>
-                      <td className="py-1.5 pr-4">{item.transaction_count}</td>
-                      <td className="py-1.5 pr-4 text-stone-500 dark:text-stone-400">{item.last_purchased}</td>
-                      <td className="py-1.5">
-                        <RowActions item={item} products={products} onChanged={refreshAll} />
-                      </td>
+                          </td>
+                          <td className="py-1.5 pr-4">
+                            <span className={`px-2 py-0.5 rounded-full text-xs ${STATUS_PILL[item.status]}`}>{item.status}</span>
+                          </td>
+                          <td className="py-1.5 pr-4 text-stone-500 dark:text-stone-400">
+                            {item.last_pack_quantity ?? '—'}
+                            {item.last_pack_quantity_source === 'user' && (
+                              <span
+                                className="ml-1.5 text-xs text-stone-400 dark:text-stone-500"
+                                title="Pack quantity was set by hand, not guessed"
+                              >
+                                (edited)
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-1.5 pr-4">
+                            {item.last_price != null && <span className="text-brand-700 dark:text-brand-400 font-medium">{formatMoney(item.last_price)}</span>}
+                            {(() => {
+                              const badge = unitPriceBadge({
+                                price: item.last_price,
+                                quantity: item.last_pack_quantity,
+                                unitLabel: item.linked_unit_label,
+                                targetUnitPrice: item.linked_target_unit_price,
+                              });
+                              if (!badge) return null;
+                              return (
+                                <span
+                                  className={'ml-1.5 text-xs px-1.5 py-0.5 rounded whitespace-nowrap ' + unitPriceBadgeClass(badge.isGoodDeal)}
+                                  title={
+                                    item.linked_target_unit_price != null
+                                      ? `Target: $${item.linked_target_unit_price}${item.linked_unit_label ? `/${item.linked_unit_label}` : ''}`
+                                      : item.status === 'linked'
+                                        ? 'Set a target unit price on this product to flag good deals'
+                                        : 'Link this item to a watchlist product to compare against its target price'
+                                  }
+                                >
+                                  {badge.text}
+                                </span>
+                              );
+                            })()}
+                            {item.last_price == null && <span className="text-stone-400 dark:text-stone-500">—</span>}
+                          </td>
+                          <td className="py-1.5 pr-4">{item.transaction_count}</td>
+                          <td className="py-1.5 pr-4 text-stone-500 dark:text-stone-400">{item.last_purchased}</td>
+                          <td className="py-1.5">
+                            <RowActions
+                              item={item}
+                              products={products}
+                              onChanged={refreshAll}
+                              onEdit={() => setEditingKey(itemKey(item))}
+                            />
+                          </td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>

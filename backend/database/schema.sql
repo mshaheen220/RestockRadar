@@ -106,12 +106,19 @@ CREATE TABLE IF NOT EXISTS ignored_purchase_items (
 -- are a different, later-added axis: how many of the product's own unit (oz/ct/etc., guessed from
 -- product_name — see PackQuantity) are INSIDE one package, and the resulting price per oz/ct.
 -- Populated by scripts/compute_unit_prices.php, safe to leave NULL where no guess was possible.
+-- product_name can be corrected by a person (garbled Costco receipt-OCR text, e.g. "'TALIANO BRD" —
+-- see CoverageService::rename()); original_product_name is set once at import and never touched
+-- again, so a correction is never destructive. pack_quantity_source distinguishes an automatic
+-- guess from a person's own override — CoverageService::setPackQuantity() writes 'user', so a case
+-- like Costco's "POISE PLUS" (no size in the name at all, nothing for PackQuantity to guess from)
+-- can still get a real value.
 CREATE TABLE IF NOT EXISTS transactions (
     id                     INTEGER PRIMARY KEY AUTOINCREMENT,
     txn_date               TEXT NOT NULL,
     site_id                INTEGER NOT NULL REFERENCES sites(id),
     order_id               TEXT NOT NULL,
     product_name           TEXT NOT NULL,
+    original_product_name TEXT,                    -- set once at import, immutable after that
     quantity               REAL NOT NULL,
     unit_price             REAL NOT NULL,
     total_price            REAL NOT NULL,
@@ -120,8 +127,9 @@ CREATE TABLE IF NOT EXISTS transactions (
     category               TEXT,                  -- only populated for Amazon today
     delivery_status        TEXT,
     recent_24mo            INTEGER NOT NULL DEFAULT 0,  -- flag from source data, NOT a filter — see brief
-    pack_quantity          REAL,                   -- guessed oz/ct inside one package, from product_name
+    pack_quantity          REAL,                   -- oz/ct inside one package — guessed or user-set
     normalized_unit_price  REAL,                    -- unit_price / pack_quantity — price per oz/ct
+    pack_quantity_source   TEXT CHECK (pack_quantity_source IN ('guessed', 'user')),
     UNIQUE(site_id, order_id, product_name, txn_date, total_price)
 );
 

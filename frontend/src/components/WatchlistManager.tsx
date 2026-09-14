@@ -13,7 +13,16 @@ import {
   Wand2,
   X,
 } from 'lucide-react';
-import { previewApi, watchlistApi, type Choice, type Importance, type MatchSuggestion, type WatchlistProduct } from '../api';
+import {
+  previewApi,
+  watchlistApi,
+  type Choice,
+  type ChoiceEvaluation,
+  type Importance,
+  type MatchSuggestion,
+  type PriceStats,
+  type WatchlistProduct,
+} from '../api';
 import { formatMoney, unitPriceBadge, unitPriceBadgeClass } from '../priceUtils';
 import SiteIcon from './SiteIcon';
 
@@ -647,6 +656,80 @@ function PreferredProducts({ product, onChange }: { product: WatchlistProduct; o
   );
 }
 
+const VERDICT_CLASS: Record<ChoiceEvaluation['verdict'], string> = {
+  all_time_low: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
+  good_deal: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
+  normal: 'text-stone-400 dark:text-stone-500',
+  insufficient_history: 'text-stone-400 dark:text-stone-500',
+};
+
+function PriceHistory({ product }: { product: WatchlistProduct }) {
+  const [data, setData] = useState<{ stats: PriceStats; choice_evaluations: ChoiceEvaluation[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    watchlistApi
+      .priceStats(product.id)
+      .then(setData)
+      .catch((err: Error) => setError(err.message));
+  }, [product.id]);
+
+  if (error) {
+    return <p className="text-red-600 text-sm">Couldn't load price history: {error}</p>;
+  }
+  if (!data) {
+    return null;
+  }
+
+  const { stats, choice_evaluations } = data;
+  const unit = product.unit_label ? `/${product.unit_label}` : '';
+
+  return (
+    <div className="mt-3 space-y-2">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">
+        Price history
+      </h4>
+
+      {stats.sample_size === 0 ? (
+        <p className="text-sm text-stone-500 dark:text-stone-400">
+          No purchase history with a computed unit price yet for this product.
+        </p>
+      ) : (
+        <dl className="grid grid-cols-3 gap-3 text-sm">
+          <div>
+            <dt className="text-xs text-stone-500 dark:text-stone-400">All-time low</dt>
+            <dd className="font-medium">${stats.min_unit_price?.toFixed(3)}{unit}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-stone-500 dark:text-stone-400">Recent average</dt>
+            <dd className="font-medium">${stats.rolling_avg_unit_price?.toFixed(3)}{unit}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-stone-500 dark:text-stone-400">Last purchase</dt>
+            <dd className="font-medium">
+              ${stats.last_purchase_unit_price?.toFixed(3)}{unit}
+              <span className="ml-1 text-xs text-stone-400 dark:text-stone-500">({stats.last_purchase_date})</span>
+            </dd>
+          </div>
+        </dl>
+      )}
+
+      {choice_evaluations.length > 0 && (
+        <ul className="space-y-1">
+          {choice_evaluations.map((e) => (
+            <li key={e.rank} className="flex items-center gap-2 text-sm">
+              <span className="truncate flex-1 min-w-0">{e.label}</span>
+              <span className={'shrink-0 text-xs px-1.5 py-0.5 rounded ' + VERDICT_CLASS[e.verdict]}>
+                {e.message ?? (e.verdict === 'insufficient_history' ? 'Not enough history yet' : 'Typical price')}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function ProductRow({ product, onChange }: { product: WatchlistProduct; onChange: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -823,6 +906,7 @@ function ProductRow({ product, onChange }: { product: WatchlistProduct; onChange
         <div className="mt-2 pl-6 space-y-3">
           <CriteriaEditor product={product} onChange={onChange} />
           <PreferredProducts product={product} onChange={onChange} />
+          <PriceHistory product={product} />
           <MatchReview product={product} onChange={onChange} />
         </div>
       )}

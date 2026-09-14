@@ -42,4 +42,19 @@ final class AlertRepository
         $stmt = $this->pdo->prepare('UPDATE alerts SET acknowledged = 1 WHERE id = :id');
         $stmt->execute(['id' => $alertId]);
     }
+
+    /**
+     * The message text embeds the actual price ("All-time low: $0.239..."), so as the price
+     * moves the message changes too — this only blocks re-inserting the exact same finding on
+     * a repeat run, not re-alerting when something genuinely changes.
+     */
+    public function existsWithMessage(int $watchlistProductId, string $message): bool
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT 1 FROM alerts WHERE watchlist_product_id = :wp_id AND message = :message LIMIT 1'
+        );
+        $stmt->execute(['wp_id' => $watchlistProductId, 'message' => $message]);
+
+        return $stmt->fetchColumn() !== false;
+    }
 }

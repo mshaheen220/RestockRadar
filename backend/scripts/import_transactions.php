@@ -48,10 +48,10 @@ function resolveSiteId(PDO $pdo, array &$cache, string $name, \PDOStatement $loo
 
 $insertStmt = $pdo->prepare(
     'INSERT OR IGNORE INTO transactions
-        (txn_date, site_id, order_id, product_name, quantity, unit_price, total_price,
+        (txn_date, site_id, order_id, product_name, original_product_name, quantity, unit_price, total_price,
          shipping_charge, product_id, category, delivery_status, recent_24mo)
      VALUES
-        (:txn_date, :site_id, :order_id, :product_name, :quantity, :unit_price, :total_price,
+        (:txn_date, :site_id, :order_id, :product_name, :original_product_name, :quantity, :unit_price, :total_price,
          :shipping_charge, :product_id, :category, :delivery_status, :recent_24mo)'
 );
 
@@ -83,6 +83,7 @@ while (($row = fgetcsv($handle)) !== false) {
         'site_id' => $siteId,
         'order_id' => $orderId,
         'product_name' => $productName,
+        'original_product_name' => $productName,
         'quantity' => (float) $quantity,
         'unit_price' => (float) $unitPrice,
         'total_price' => (float) $totalPrice,

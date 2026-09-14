@@ -17,11 +17,15 @@ how often you reorder each one from your past purchases, and shows you that on o
 - Shows how much of your purchase history is actually organized, and lets you go the other direction —
   starting from an unlinked purchase and picking which watchlist product it belongs to (or telling it
   that item will never be a watchlist product).
+- Compares a price you've captured against your own purchase history (all-time low, recent average)
+  and can raise an alert when it's a genuinely good one — on demand, via a button on the Dashboard.
 
 ## What it doesn't do yet
 
-- It doesn't check live prices at stores yet — today it only learns from your past purchase history.
-- It doesn't automatically create alerts yet (deal detection is still being built).
+- It doesn't check live prices at stores yet — today it only learns from your past purchase history,
+  plus whatever price you've captured yourself via the wand button or the browser extension.
+- Deal-checking has to be triggered manually (a button in the Dashboard) — nothing runs on a schedule
+  yet, since RestockRadar isn't deployed anywhere that's always on.
 
 ## Managing your watchlist
 
@@ -83,6 +87,20 @@ could figure out the package size from the product name, the per-unit price too.
 the good/bad-deal color for items linked to a watchlist product with a **Good price** set (since
 that's what it's comparing against); unlinked items still show the price, just without the color.
 
+### Checking against your own price history, not just a fixed number
+
+**Good price** (above) is a number you type once. There's a second, automatic check that compares
+a captured price against your *actual buying history* instead — expand a product in Manage
+Watchlist to see its **Price history**: the all-time low, your recent average, and what you last
+paid, all per unit. Under that, each preferred product with a price gets a verdict against that
+history — an all-time-low, a real dip below your recent average, or just typical.
+
+To turn a "this is a deal" finding into something you actually see, go to the **Dashboard** and
+click **Check for deals** — it re-checks every product with a captured price against its history
+and adds a new alert for anything that qualifies. Alerts show up right there, with a dismiss button
+once you've seen them. Running it again won't repeat an alert you've already gotten for the exact
+same price — only a genuinely new price gets a new alert.
+
 **For sites that block that lookup** (Walmart included), there's a better option: the RestockRadar
 browser extension in the `extension/` folder. Install it once (see `extension/README.md` — it's a
 few clicks in Chrome's extension settings, not published to the store), then whenever you're on a
@@ -118,6 +136,25 @@ Actions depend on an item's status:
   Unmatched). Use this if a suggestion or assignment turns out to be wrong — e.g. a differently-flavored
   item from the right brand got linked to the wrong product.
 - **Ignored**: click the eye icon to un-ignore it, putting it back into Unmatched.
+
+Every item also has a pencil icon, regardless of status — click it to fix the name or set the
+package quantity by hand:
+
+- **Fix the name**: Costco receipts in particular sometimes come through garbled — a size dropped
+  entirely ("POISE PLUS," no count anywhere), or text merged in from the line above or below it on
+  the receipt ("BUTTERNUT SQ CASCADE," "'TALIANO BRD"). Type in what it actually is; the correction
+  applies everywhere that name was used (any link, ignore, or price history it already had).
+- **Set the pack quantity by hand**: for something like "POISE PLUS" there's no size in the name at
+  all, so the app has nothing to guess from — it can't tell you whether the price was good. Type in
+  the real count (check the box or a recent receipt) and it'll compute the per-unit price from that
+  going forward. An item you've corrected this way shows "(edited)" next to it so you can tell it
+  apart from an automatic guess; clearing the field back to empty lets the app try guessing again
+  next time it runs.
+- **Fix the price or quantity bought**: if the import itself got something wrong — a misread price,
+  for instance — and the item shows "Times bought: 1," you can correct the price paid and how many
+  you bought right there too. This only works for a single purchase: if an item groups several
+  purchases together, there's no one price to correct (you'd see "(multiple purchases)" instead,
+  since picking one specific purchase out of a group to fix isn't built yet).
 
 ### Doing this in bulk
 

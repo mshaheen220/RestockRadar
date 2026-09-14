@@ -76,12 +76,41 @@ export type CoverageItem = {
   linked_target_unit_price: number | null;
   ignored_at: string | null;
   last_price: number | null;
+  last_quantity: number | null;
   last_pack_quantity: number | null;
   last_normalized_unit_price: number | null;
+  last_pack_quantity_source: 'guessed' | 'user' | null;
   status: CoverageStatus;
 };
 
 export type Site = { id: number; name: string };
+
+export type PriceStats = {
+  sample_size: number;
+  min_unit_price: number | null;
+  avg_unit_price: number | null;
+  rolling_avg_unit_price: number | null;
+  last_purchase_unit_price: number | null;
+  last_purchase_date: string | null;
+};
+
+export type DealVerdict = 'insufficient_history' | 'all_time_low' | 'good_deal' | 'normal';
+
+export type ChoiceEvaluation = {
+  rank: number;
+  label: string;
+  unit_price: number;
+  verdict: DealVerdict;
+  message: string | null;
+};
+
+export type Alert = {
+  id: number;
+  kind: string;
+  message: string;
+  created_at: string;
+  display_name: string;
+};
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -133,6 +162,20 @@ export const watchlistApi = {
     request<WatchlistProduct>(`/watchlist/${id}/match-suggestions/accept`, { method: 'POST', body: JSON.stringify(input) }),
   rejectSuggestion: (id: number, input: { site_name: string; raw_product_name: string }) =>
     request<{ rejected: boolean }>(`/watchlist/${id}/match-suggestions/reject`, { method: 'POST', body: JSON.stringify(input) }),
+  priceStats: (id: number) => request<{ stats: PriceStats; choice_evaluations: ChoiceEvaluation[] }>(`/watchlist/${id}/price-stats`),
+};
+
+export const alertsApi = {
+  list: () => request<Alert[]>('/alerts'),
+  acknowledge: (id: number) => request<{ acknowledged: true }>(`/alerts/${id}/acknowledge`, { method: 'POST' }),
+};
+
+export const dealsApi = {
+  detect: () =>
+    request<{ products_checked: number; alerts_created: { alert_id: number; watchlist_product_id: number; display_name: string; message: string }[] }>(
+      '/deals/detect',
+      { method: 'POST' },
+    ),
 };
 
 export const coverageApi = {
@@ -148,6 +191,12 @@ export const coverageApi = {
     request<{ ignored: true }>('/coverage/ignore', { method: 'POST', body: JSON.stringify(input) }),
   unignore: (input: { site_name: string; raw_product_name: string }) =>
     request<{ ignored: false }>('/coverage/ignore', { method: 'DELETE', body: JSON.stringify(input) }),
+  rename: (input: { site_name: string; raw_product_name: string; new_name: string }) =>
+    request<{ renamed: true; new_name: string }>('/coverage/rename', { method: 'POST', body: JSON.stringify(input) }),
+  setPackQuantity: (input: { site_name: string; raw_product_name: string; pack_quantity: number | null }) =>
+    request<{ pack_quantity: number | null }>('/coverage/pack-quantity', { method: 'POST', body: JSON.stringify(input) }),
+  correctTransaction: (input: { site_name: string; raw_product_name: string; quantity: number; unit_price: number }) =>
+    request<{ corrected: true }>('/coverage/transaction', { method: 'POST', body: JSON.stringify(input) }),
 };
 
 export const sitesApi = {

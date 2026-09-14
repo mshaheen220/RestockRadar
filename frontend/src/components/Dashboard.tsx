@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { WatchlistProduct } from '../api';
+import { RefreshCw, X } from 'lucide-react';
+import { alertsApi, dealsApi, type Alert, type WatchlistProduct } from '../api';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
 
@@ -8,14 +9,6 @@ type TransactionSummary = {
   earliest: string | null;
   latest: string | null;
   distinct_sites: number;
-};
-
-type Alert = {
-  id: number;
-  kind: string;
-  message: string;
-  created_at: string;
-  display_name: string;
 };
 
 function useJson<T>(path: string) {
@@ -45,10 +38,94 @@ function useJson<T>(path: string) {
   return { data, error };
 }
 
+function AlertsPanel() {
+  const [alerts, setAlerts] = useState<Alert[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+
+  const load = () => {
+    alertsApi.list().then(setAlerts).catch((err: Error) => setError(err.message));
+  };
+
+  useEffect(load, []);
+
+  const checkForDeals = async () => {
+    setChecking(true);
+    setStatus(null);
+    setError(null);
+    try {
+      const result = await dealsApi.detect();
+      setStatus(
+        result.alerts_created.length === 0
+          ? `Checked ${result.products_checked} product(s) with preferred prices set — nothing new.`
+          : `Checked ${result.products_checked} product(s) — found ${result.alerts_created.length} new alert(s).`,
+      );
+      load();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const acknowledge = async (id: number) => {
+    await alertsApi.acknowledge(id);
+    load();
+  };
+
+  return (
+    <section
+      aria-labelledby="alerts-heading"
+      className="rounded-xl border border-brand-200 dark:border-brand-800 bg-white dark:bg-stone-900 p-4"
+    >
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <h2 id="alerts-heading" className="font-semibold">
+          Alerts
+        </h2>
+        <button
+          type="button"
+          onClick={checkForDeals}
+          disabled={checking}
+          aria-label="Check for deals now"
+          title="Check whether your preferred products' captured prices beat their price history"
+          className="shrink-0 flex items-center gap-1 text-sm text-brand-600 dark:text-brand-400 hover:underline disabled:opacity-40"
+        >
+          <RefreshCw size={14} className={checking ? 'animate-spin' : ''} />
+          {checking ? 'Checking…' : 'Check for deals'}
+        </button>
+      </div>
+
+      {status && <p className="text-xs text-stone-500 dark:text-stone-400 mb-2">{status}</p>}
+      {error && <p className="text-red-600 text-sm">Couldn't load alerts: {error}</p>}
+      {alerts && alerts.length === 0 && <p className="text-sm text-stone-500 dark:text-stone-400">No open alerts.</p>}
+      {alerts && alerts.length > 0 && (
+        <ul className="text-sm space-y-2">
+          {alerts.map((alert) => (
+            <li key={alert.id} className="flex items-start justify-between gap-2">
+              <span>
+                <span className="font-medium">{alert.display_name}</span>: {alert.message}
+              </span>
+              <button
+                type="button"
+                onClick={() => acknowledge(alert.id)}
+                aria-label={`Dismiss alert for ${alert.display_name}`}
+                title="Dismiss"
+                className="shrink-0 p-1 rounded text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+              >
+                <X size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export default function Dashboard() {
   const { data: watchlist, error: watchlistError } = useJson<WatchlistProduct[]>('/watchlist');
   const { data: summary, error: summaryError } = useJson<TransactionSummary>('/transactions/summary');
-  const { data: alerts, error: alertsError } = useJson<Alert[]>('/alerts');
 
   return (
     <div className="grid gap-6 sm:grid-cols-2">
@@ -80,25 +157,7 @@ export default function Dashboard() {
         )}
       </section>
 
-      <section
-        aria-labelledby="alerts-heading"
-        className="rounded-xl border border-brand-200 dark:border-brand-800 bg-white dark:bg-stone-900 p-4"
-      >
-        <h2 id="alerts-heading" className="font-semibold mb-2">
-          Alerts
-        </h2>
-        {alertsError && <p className="text-red-600 text-sm">Couldn't load alerts: {alertsError}</p>}
-        {alerts && alerts.length === 0 && <p className="text-sm text-stone-500 dark:text-stone-400">No open alerts.</p>}
-        {alerts && alerts.length > 0 && (
-          <ul className="text-sm space-y-2">
-            {alerts.map((alert) => (
-              <li key={alert.id}>
-                <span className="font-medium">{alert.display_name}</span>: {alert.message}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <AlertsPanel />
 
       <section
         aria-labelledby="watchlist-heading"

@@ -61,6 +61,23 @@ Five-stage pipeline, single direction:
    `last_normalized_unit_price` per item come from whichever single transaction is most recent for
    that (site, product_name) — a correlated scalar subquery per column in `CoverageService::items()`,
    not a join, so a same-day tie between two orders can't multiply-join and inflate `transaction_count`.
+   Some purchase-history names have nothing for `PackQuantity::guess()` to work with (Costco's
+   receipt-OCR sometimes drops the size entirely — "POISE PLUS" — or merges in a fragment of a
+   neighboring line — "BUTTERNUT SQ CASCADE"), so `CoverageService::rename()` and `::setPackQuantity()`
+   let a person fix either by hand, applied to every transaction/alias/ignore/rejected-match row
+   sharing that exact (site, name) — same granularity as everything else in Coverage.
+   `transactions.original_product_name` is set once at import and never touched again, so a rename
+   is corrective, never destructive; `pack_quantity_source` ('guessed' vs 'user') tracks which ones
+   were hand-set so `compute_unit_prices.php` (which only fills `NULL` rows) can never clobber them.
+   Verified live: renamed a real item to a throwaway string and back, confirming the transaction row,
+   its `ignored_purchase_items` status, and `original_product_name` all survived the round-trip intact.
+   `CoverageService::correctSingleTransaction()` fixes a wrong `quantity`/`unit_price` from the CSV
+   import itself (receipt-OCR misreads happen, not just on the name) — deliberately restricted to
+   (site, name) groups with exactly one transaction, since a group with several purchases has no
+   single "the price" to correct; picking one purchase out of a multi-purchase group to fix isn't
+   built (would need a drill-down view Coverage doesn't have). Rejects with a clear message
+   ("groups N purchases") rather than silently guessing which one you meant. `total_price` is always
+   recomputed as `quantity × unit_price`, never taken as separate input, so the two can't disagree.
 4. **Deal & habit analysis** — `backend/src/Analysis/ReorderAnalyzer.php` (reorder-interval calculation
    with recency-weighted averaging, half-life decay, so pre-move-out household size doesn't skew results)
    + `backend/src/Matching/ProductMatcher.php` (suggests links between a watchlist product and the raw
@@ -70,15 +87,31 @@ Five-stage pipeline, single direction:
    + `backend/src/Matching/CoverageService.php` (the reverse direction: every distinct purchase-history
    item annotated with its status — linked/unmatched/ignored — filterable by status/site/search via
    `/coverage/items`, so the same **Coverage** tab both triages new items and corrects existing links,
-   e.g. unlinking something a brand-only match got wrong).
+   e.g. unlinking something a brand-only match got wrong)
+   + `backend/src/Analysis/DealDetector.php` — the other half of stage 4: `historicalStats()` computes
+   all-time-low/average/rolling-average (last 180 days) unit price from `transactions.normalized_unit_price`
+   for a product's aliases; `evaluate()` compares a *currently captured* price (a `watchlist_product_choices`
+   row — something you or the extension just looked at) against that history and returns a verdict
+   (`all_time_low` / `good_deal` / `normal` / `insufficient_history`, the last requiring 3+ priced
+   purchases). Comparing a past purchase against its own history would be circular, so the two prices
+   are deliberately kept separate — see the class docblock. `GET /watchlist/{id}/price-stats` exposes
+   this for one product (shown as "Price history" in Manage Watchlist); `POST /deals/detect` runs it
+   across every active product with at least one priced choice and inserts a row into `alerts` for
+   each qualifying verdict, deduped by exact message text (`AlertRepository::existsWithMessage()`) so
+   repeat runs don't spam identical findings — verified live: creates on first run, empty on a second
+   run with no change, and an acknowledge clears it from `/alerts` immediately.
 5. **Alerts & dashboard** — `backend/src/Alerts` (API) + `frontend/` (React + TS + Tailwind dashboard).
+   The Dashboard's Alerts panel has a "Check for deals" button (`POST /deals/detect`) and a dismiss
+   action per alert (`POST /alerts/{id}/acknowledge`) — until this, `alerts` existed in the schema from
+   the very first commit but nothing had ever written to it.
 
 ## Status
 
 - Stages 1, 3, 4, 5 scaffolded: watchlist CRUD (with a "what matters" criteria editor — see
   `frontend/src/components/WatchlistManager.tsx`), SQLite schema + CSV import, reorder-interval analysis,
-  fuzzy match suggestions (accept/reject review UI, same component), a minimal JSON API, and a dashboard
-  UI (summary stats, alerts list, watchlist table).
+  deal detection against real purchase history, fuzzy match suggestions (accept/reject review UI, same
+  component), a minimal JSON API, and a dashboard UI (summary stats, a now-functional alerts list,
+  watchlist table).
 - Fuzzy matching is a *suggestion* layer only — accepting a suggestion writes a normal row into
   `product_aliases`, same as manual aliasing. A rejected suggestion is remembered
   (`watchlist_product_rejected_matches`) so it won't resurface for that product. Brand-only criteria can

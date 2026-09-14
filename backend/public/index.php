@@ -8,6 +8,9 @@
  *   PATCH  /api/watchlist/{id}
  *   DELETE /api/watchlist/{id}
  *   GET    /api/watchlist/{id}/reorder-stats
+ *   GET    /api/watchlist/{id}/price-stats
+ *   POST   /api/deals/detect
+ *   POST   /api/alerts/{id}/acknowledge
  *   POST   /api/watchlist/{id}/criteria
  *   DELETE /api/watchlist/{id}/criteria/{criterionId}
  *   DELETE /api/watchlist/{id}/aliases/{aliasId}
@@ -20,6 +23,9 @@
  *   GET    /api/coverage/items?status=&search=&site_id=&limit=&offset=
  *   POST   /api/coverage/ignore
  *   DELETE /api/coverage/ignore
+ *   POST   /api/coverage/rename          { site_name, raw_product_name, new_name }
+ *   POST   /api/coverage/pack-quantity   { site_name, raw_product_name, pack_quantity }
+ *   POST   /api/coverage/transaction     { site_name, raw_product_name, quantity, unit_price } — single-purchase items only
  *   GET    /api/sites
  *   GET    /api/product-preview?url=
  *   GET    /api/alerts
@@ -31,6 +37,7 @@ declare(strict_types=1);
 require __DIR__ . '/../vendor/autoload.php';
 
 use RestockRadar\Alerts\AlertRepository;
+use RestockRadar\Analysis\DealDetector;
 use RestockRadar\Analysis\ReorderAnalyzer;
 use RestockRadar\Matching\CoverageService;
 use RestockRadar\Matching\ProductMatcher;
@@ -119,6 +126,36 @@ if (preg_match('#^/watchlist/(\d+)/reorder-stats$#', $path, $m) && $method === '
 
     $analyzer = new ReorderAnalyzer($pdo);
     respond($analyzer->computeForProductNames($productNames));
+}
+
+if (preg_match('#^/watchlist/(\d+)/price-stats$#', $path, $m) && $method === 'GET') {
+    $watchlistId = (int) $m[1];
+    $product = $watchlistRepo->find($watchlistId);
+
+    if ($product === null) {
+        respond(['error' => 'Not found'], 404);
+    }
+
+    $aliases = $watchlistRepo->aliasesFor($watchlistId);
+    $productNames = array_column($aliases, 'raw_product_name');
+
+    $detector = new DealDetector($pdo);
+    $stats = $detector->historicalStats($productNames);
+
+    $choiceEvaluations = [];
+    foreach ($product['choices'] as $choice) {
+        if ($choice['price'] === null || $choice['quantity'] === null || (float) $choice['quantity'] === 0.0) {
+            continue;
+        }
+        $unitPrice = $choice['price'] / $choice['quantity'];
+        $choiceEvaluations[] = [
+            'rank' => $choice['rank'],
+            'label' => $choice['label'],
+            'unit_price' => round($unitPrice, 4),
+        ] + $detector->evaluate($unitPrice, $stats);
+    }
+
+    respond(['stats' => $stats, 'choice_evaluations' => $choiceEvaluations]);
 }
 
 if (preg_match('#^/watchlist/(\d+)/criteria$#', $path, $m) && $method === 'POST') {
@@ -303,6 +340,81 @@ if ($path === '/coverage/ignore' && $method === 'DELETE') {
     respond(['ignored' => false]);
 }
 
+if ($path === '/coverage/rename' && $method === 'POST') {
+    $body = jsonBody();
+
+    foreach (['site_name', 'raw_product_name', 'new_name'] as $required) {
+        if (!isset($body[$required]) || trim((string) $body[$required]) === '') {
+            respond(['error' => "{$required} is required"], 422);
+        }
+    }
+
+    $siteId = $watchlistRepo->siteIdByName($body['site_name']);
+    if ($siteId === null) {
+        respond(['error' => "Unknown site: {$body['site_name']}"], 422);
+    }
+
+    try {
+        (new CoverageService($pdo))->rename($siteId, $body['raw_product_name'], trim($body['new_name']));
+        respond(['renamed' => true, 'new_name' => trim($body['new_name'])]);
+    } catch (\RuntimeException $e) {
+        respond(['error' => $e->getMessage()], 409);
+    }
+}
+
+if ($path === '/coverage/pack-quantity' && $method === 'POST') {
+    $body = jsonBody();
+
+    foreach (['site_name', 'raw_product_name'] as $required) {
+        if (!isset($body[$required]) || trim((string) $body[$required]) === '') {
+            respond(['error' => "{$required} is required"], 422);
+        }
+    }
+
+    $siteId = $watchlistRepo->siteIdByName($body['site_name']);
+    if ($siteId === null) {
+        respond(['error' => "Unknown site: {$body['site_name']}"], 422);
+    }
+
+    $packQuantity = array_key_exists('pack_quantity', $body) && $body['pack_quantity'] !== null && $body['pack_quantity'] !== ''
+        ? (float) $body['pack_quantity']
+        : null;
+
+    try {
+        (new CoverageService($pdo))->setPackQuantity($siteId, $body['raw_product_name'], $packQuantity);
+        respond(['pack_quantity' => $packQuantity]);
+    } catch (\RuntimeException $e) {
+        respond(['error' => $e->getMessage()], 422);
+    }
+}
+
+if ($path === '/coverage/transaction' && $method === 'POST') {
+    $body = jsonBody();
+
+    foreach (['site_name', 'raw_product_name', 'quantity', 'unit_price'] as $required) {
+        if (!isset($body[$required]) || $body[$required] === '') {
+            respond(['error' => "{$required} is required"], 422);
+        }
+    }
+
+    $siteId = $watchlistRepo->siteIdByName($body['site_name']);
+    if ($siteId === null) {
+        respond(['error' => "Unknown site: {$body['site_name']}"], 422);
+    }
+
+    try {
+        (new CoverageService($pdo))->correctSingleTransaction(
+            $siteId,
+            $body['raw_product_name'],
+            (float) $body['quantity'],
+            (float) $body['unit_price'],
+        );
+        respond(['corrected' => true]);
+    } catch (\RuntimeException $e) {
+        respond(['error' => $e->getMessage()], 409);
+    }
+}
+
 if ($path === '/product-preview' && $method === 'GET') {
     $url = isset($_GET['url']) ? trim((string) $_GET['url']) : '';
     if ($url === '') {
@@ -319,6 +431,52 @@ if ($path === '/product-preview' && $method === 'GET') {
 if ($path === '/alerts' && $method === 'GET') {
     $repo = new AlertRepository($pdo);
     respond($repo->unacknowledged());
+}
+
+if (preg_match('#^/alerts/(\d+)/acknowledge$#', $path, $m) && $method === 'POST') {
+    (new AlertRepository($pdo))->acknowledge((int) $m[1]);
+    respond(['acknowledged' => true]);
+}
+
+if ($path === '/deals/detect' && $method === 'POST') {
+    $detector = new DealDetector($pdo);
+    $alertRepo = new AlertRepository($pdo);
+
+    $checked = 0;
+    $created = [];
+
+    foreach ($watchlistRepo->all() as $product) {
+        if (!$product['active'] || $product['choices'] === []) {
+            continue;
+        }
+
+        $aliases = $watchlistRepo->aliasesFor((int) $product['id']);
+        $productNames = array_column($aliases, 'raw_product_name');
+        $stats = $detector->historicalStats($productNames);
+        $checked++;
+
+        foreach ($product['choices'] as $choice) {
+            if ($choice['price'] === null || $choice['quantity'] === null || (float) $choice['quantity'] === 0.0) {
+                continue;
+            }
+
+            $unitPrice = $choice['price'] / $choice['quantity'];
+            $result = $detector->evaluate($unitPrice, $stats);
+
+            if ($result['message'] === null) {
+                continue;
+            }
+
+            if ($alertRepo->existsWithMessage((int) $product['id'], $result['message'])) {
+                continue;
+            }
+
+            $alertId = $alertRepo->create((int) $product['id'], $result['verdict'], $result['message']);
+            $created[] = ['alert_id' => $alertId, 'watchlist_product_id' => $product['id'], 'display_name' => $product['display_name'], 'message' => $result['message']];
+        }
+    }
+
+    respond(['products_checked' => $checked, 'alerts_created' => $created]);
 }
 
 if ($path === '/transactions/summary' && $method === 'GET') {
