@@ -22,6 +22,8 @@ how often you reorder each one from your past purchases, and shows you that on o
 - Has a **Deal Finder** tab: press Analyze to see, across your whole watchlist at once, every
   captured store price ranked cheapest-first against your own purchase history — a report you can
   re-run any time, not just a one-off alert.
+- Has a **Purchases** tab for adding to your history yourself — either one quick item (a stop on
+  the way home, nothing else worth logging) or a full CSV of receipts at once.
 
 ## What it doesn't do yet
 
@@ -140,6 +142,35 @@ one you can **Accept** (link it in) or **Dismiss** (never suggest that one again
 Brand-only matching can occasionally suggest something from the wrong product — e.g. a different
 Chobani-brand item showing up under your yogurt entry. That's expected; just dismiss it. Adding a
 **variety** or other criterion (not just brand) usually makes the suggestions more precise.
+
+## Adding new purchases
+
+Open the **Purchases** tab whenever you've bought something new — this is meant to be a weekly
+habit, not an occasional chore.
+
+**Add a single purchase** is for the common case: you stopped somewhere and bought one thing worth
+logging, nothing else. Fill in the site, product name, and what you paid — site and date stay
+filled in after each add, so logging a few different things from the same trip is just clearing
+the product/price fields each time. Only bought more than one of the exact same package? Click
+**Bought more than one?** to reveal that field; otherwise it's assumed to be 1. There's no receipt,
+so there's no `order_id` to match against — one gets made up for you (`manual-...`) so the row
+still fits the same table as everything else.
+
+**Pack size** (optional) is how many of the product's own unit are inside *one* package — 24 for a
+24-roll pack of toilet paper, not the 1 package you bought. Leave it blank and the app tries to
+guess it from the product name (only works if the name itself states a size, like "24 Mega
+Rolls"); if the name doesn't say, or the guess would be wrong, type the real number here — it
+always wins over any guess.
+
+**Import a full receipt** is for a real receipt or order-history export — paste its rows or choose
+a file, in the same CSV shape as `transaction_log.csv` (`date, site, order_id, product_name,
+quantity, unit_price, total_price, shipping_charge, product_id, category, delivery_status,
+recent_24mo`). It's always safe to import a file that overlaps with what's already in your
+history — anything already there is skipped, never double-counted, so re-importing a full export
+after adding a few new orders to it works fine.
+
+Either way, the new rows show up in **Coverage** like anything else — unmatched until you link them
+to a watchlist product (or ignore them), same as your original imported history.
 
 ## Checking your coverage
 

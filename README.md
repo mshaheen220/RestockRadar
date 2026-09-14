@@ -62,7 +62,23 @@ Five-stage pipeline, single direction:
    never drift out of sync with their inputs.
 2. **Site fetchers** — `backend/src/Fetchers` — **not implemented yet** (deferred; see Status below).
 3. **Price & purchase history** — SQLite (`backend/database/schema.sql`), loaded from `transaction_log.csv`
-   via `backend/scripts/import_transactions.php`. `PackQuantity::guess()` is also run in bulk over
+   via `backend/scripts/import_transactions.php`, which is now a thin wrapper around
+   `RestockRadar\Import\TransactionImporter::importCsvFromFile()` — the same class
+   `POST /purchases/import` (paste/upload CSV) calls via `importCsvFromString()`, so the CLI path
+   used to seed the original 6,117 rows and the **Purchases** tab's bulk-import can never drift
+   into parsing the format differently. `TransactionImporter::addSingle()` is the other path this
+   tab uses — one purchase with no receipt (`POST /purchases`): guesses `pack_quantity`/unit from
+   the product name immediately via `PackQuantity::guess()` (rather than waiting for the next bulk
+   `compute_unit_prices.php` run) and fabricates an `order_id` (`manual-<hex>`) since
+   `transactions.order_id` is `NOT NULL` but a walk-in purchase has no real one. An explicit
+   `pack_quantity`/`pack_quantity_unit` in the request overrides the guess entirely
+   (`pack_quantity_source = 'user'`) — needed since a name like "Charmin Ultra Soft Toilet Paper"
+   alone has nothing for the regex to find; the Purchases tab exposes this as an optional "Pack
+   size" field that wins over any guess when filled in. Both import paths
+   share the same re-run-safe dedup as the CLI script (`INSERT OR IGNORE` against the UNIQUE
+   constraint) — verified live: importing a CSV row twice inserts it once, and a malformed header
+   is rejected with a 422 rather than partially importing.
+   `PackQuantity::guess()` is also run in bulk over
    all of `transactions` by `backend/scripts/compute_unit_prices.php`, populating
    `pack_quantity`/`pack_quantity_unit`/`normalized_unit_price` per row (unlike the per-choice case,
    this *is* stored — transaction rows are immutable historical fact once imported, so there's no
@@ -231,6 +247,7 @@ backend/            PHP API + analysis (stages 1, 3, 4, 5)
   src/Watchlist/     stage 1 — watchlist CRUD
   src/Fetchers/      stage 2 — contract only, not implemented
   src/Storage/       PDO/SQLite connection
+  src/Import/        stage 3 — TransactionImporter (CSV bulk + single-purchase add)
   src/Analysis/      stage 4 — deal detection (PackQuantity, DealDetector)
   src/Alerts/         stage 5 — alerts API
   database/          schema.sql + generated .sqlite (gitignored)

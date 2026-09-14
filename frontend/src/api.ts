@@ -196,6 +196,20 @@ export const alertsApi = {
   acknowledge: (id: number) => request<{ acknowledged: true }>(`/alerts/${id}/acknowledge`, { method: 'POST' }),
 };
 
+export const purchasesApi = {
+  import: (csv: string) => request<{ read: number; inserted: number }>('/purchases/import', { method: 'POST', body: JSON.stringify({ csv }) }),
+  addSingle: (input: {
+    site_name: string;
+    product_name: string;
+    quantity: number;
+    unit_price: number;
+    txn_date?: string | null;
+    category?: string | null;
+    pack_quantity?: number | null;
+    pack_quantity_unit?: string | null;
+  }) => request<{ id: number }>('/purchases', { method: 'POST', body: JSON.stringify(input) }),
+};
+
 export const dealsApi = {
   detect: () =>
     request<{ products_checked: number; alerts_created: { alert_id: number; watchlist_product_id: number; display_name: string; message: string }[] }>(

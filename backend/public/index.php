@@ -30,6 +30,8 @@
  *   GET    /api/product-preview?url=
  *   GET    /api/alerts
  *   GET    /api/transactions/summary
+ *   POST   /api/purchases/import  { csv }  — bulk, same format as transaction_log.csv
+ *   POST   /api/purchases         { site_name, product_name, quantity, unit_price, txn_date?, category? }
  */
 
 declare(strict_types=1);
@@ -39,6 +41,7 @@ require __DIR__ . '/../vendor/autoload.php';
 use RestockRadar\Alerts\AlertRepository;
 use RestockRadar\Analysis\DealDetector;
 use RestockRadar\Analysis\PackQuantity;
+use RestockRadar\Import\TransactionImporter;
 use RestockRadar\Matching\CoverageService;
 use RestockRadar\Matching\ProductMatcher;
 use RestockRadar\Preview\ProductPreviewFetcher;
@@ -601,6 +604,53 @@ if ($path === '/transactions/summary' && $method === 'GET') {
          FROM transactions"
     );
     respond($stmt->fetch());
+}
+
+/**
+ * Bulk path: paste/upload the same unified CSV format that seeded transaction_log.csv. Shares
+ * TransactionImporter with scripts/import_transactions.php, so the CLI and this endpoint can
+ * never drift into parsing things differently.
+ */
+if ($path === '/purchases/import' && $method === 'POST') {
+    $body = jsonBody();
+
+    if (!isset($body['csv']) || trim((string) $body['csv']) === '') {
+        respond(['error' => 'csv is required'], 422);
+    }
+
+    $importer = new TransactionImporter($pdo);
+
+    try {
+        $result = $importer->importCsvFromString($body['csv']);
+        respond($result);
+    } catch (\RuntimeException $e) {
+        respond(['error' => $e->getMessage()], 422);
+    }
+}
+
+/** Single path: one purchase, no receipt to import — see TransactionImporter::addSingle(). */
+if ($path === '/purchases' && $method === 'POST') {
+    $body = jsonBody();
+
+    foreach (['site_name', 'product_name', 'quantity', 'unit_price'] as $required) {
+        if (!isset($body[$required]) || trim((string) $body[$required]) === '') {
+            respond(['error' => "{$required} is required"], 422);
+        }
+    }
+
+    $importer = new TransactionImporter($pdo);
+    $id = $importer->addSingle([
+        'site_name' => (string) $body['site_name'],
+        'product_name' => (string) $body['product_name'],
+        'quantity' => (float) $body['quantity'],
+        'unit_price' => (float) $body['unit_price'],
+        'txn_date' => !empty($body['txn_date']) ? (string) $body['txn_date'] : null,
+        'category' => !empty($body['category']) ? (string) $body['category'] : null,
+        'pack_quantity' => !empty($body['pack_quantity']) ? (float) $body['pack_quantity'] : null,
+        'pack_quantity_unit' => !empty($body['pack_quantity_unit']) ? PackQuantity::normalizeUnit((string) $body['pack_quantity_unit']) : null,
+    ]);
+
+    respond(['id' => $id], 201);
 }
 
 respond(['error' => 'Not found', 'path' => $path], 404);
