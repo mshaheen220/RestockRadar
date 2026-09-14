@@ -52,6 +52,12 @@ CREATE TABLE IF NOT EXISTS watchlist_product_criteria (
 -- watchlist_products.unit_label's unit — without it, price alone can't say whether $18.99 is good
 -- or bad. price / quantity is the unit price, compared against target_unit_price to flag a deal;
 -- computed on read, not stored, so it can never drift out of sync with its inputs.
+-- quantity_unit is the literal unit that quantity was captured in (see PackQuantity::normalizeUnit) —
+-- e.g. 'floz' for a 12-pack of 12 fl oz cans, 'l' for a 2-liter bottle. Without it, a 12-pack of
+-- cans and a 2-liter bottle both just have "a quantity", with nothing recording that one is fluid
+-- ounces and the other liters — comparing their unit prices would silently be nonsense. Nullable
+-- because rows saved before this column existed have no unit on record; PackQuantity::comparable()/
+-- convert() decide whether two choices' units can be compared at all before their prices are.
 CREATE TABLE IF NOT EXISTS watchlist_product_choices (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
     watchlist_product_id  INTEGER NOT NULL REFERENCES watchlist_products(id) ON DELETE CASCADE,
@@ -64,6 +70,7 @@ CREATE TABLE IF NOT EXISTS watchlist_product_choices (
     price_currency        TEXT,
     price_captured_at     TEXT,
     quantity               REAL,
+    quantity_unit          TEXT,
     UNIQUE(watchlist_product_id, rank)
 );
 
@@ -128,6 +135,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     delivery_status        TEXT,
     recent_24mo            INTEGER NOT NULL DEFAULT 0,  -- flag from source data, NOT a filter — see brief
     pack_quantity          REAL,                   -- oz/ct inside one package — guessed or user-set
+    pack_quantity_unit     TEXT,                   -- literal unit pack_quantity is in (see PackQuantity::normalizeUnit)
     normalized_unit_price  REAL,                    -- unit_price / pack_quantity — price per oz/ct
     pack_quantity_source   TEXT CHECK (pack_quantity_source IN ('guessed', 'user')),
     UNIQUE(site_id, order_id, product_name, txn_date, total_price)

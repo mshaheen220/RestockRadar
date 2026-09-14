@@ -196,7 +196,7 @@ final class WatchlistRepository
     public function choicesFor(int $watchlistProductId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, rank, label, site_label AS site_name, url, image_url, price, price_currency, price_captured_at, quantity
+            'SELECT id, rank, label, site_label AS site_name, url, image_url, price, price_currency, price_captured_at, quantity, quantity_unit
              FROM watchlist_product_choices
              WHERE watchlist_product_id = :id
              ORDER BY rank ASC'
@@ -207,14 +207,14 @@ final class WatchlistRepository
     }
 
     /**
-     * $fields may include: site_label, url, image_url, price, price_currency, quantity. Any key
-     * omitted (not just null) keeps whatever that slot already had — e.g. editing just the label
-     * doesn't wipe out a previously captured price/image/quantity snapshot.
+     * $fields may include: site_label, url, image_url, price, price_currency, quantity,
+     * quantity_unit. Any key omitted (not just null) keeps whatever that slot already had — e.g.
+     * editing just the label doesn't wipe out a previously captured price/image/quantity snapshot.
      */
     public function setChoice(int $watchlistProductId, int $rank, string $label, array $fields = []): void
     {
         $existingStmt = $this->pdo->prepare(
-            'SELECT site_label, url, image_url, price, price_currency, price_captured_at, quantity
+            'SELECT site_label, url, image_url, price, price_currency, price_captured_at, quantity, quantity_unit
              FROM watchlist_product_choices WHERE watchlist_product_id = :wp_id AND rank = :rank'
         );
         $existingStmt->execute(['wp_id' => $watchlistProductId, 'rank' => $rank]);
@@ -237,16 +237,17 @@ final class WatchlistRepository
             'price_currency' => $pick('price_currency'),
             'price_captured_at' => $priceCapturedAt,
             'quantity' => $pick('quantity'),
+            'quantity_unit' => $pick('quantity_unit'),
         ];
 
         $stmt = $this->pdo->prepare(
             'INSERT INTO watchlist_product_choices
-                (watchlist_product_id, rank, label, site_label, url, image_url, price, price_currency, price_captured_at, quantity)
-             VALUES (:wp_id, :rank, :label, :site_label, :url, :image_url, :price, :price_currency, :price_captured_at, :quantity)
+                (watchlist_product_id, rank, label, site_label, url, image_url, price, price_currency, price_captured_at, quantity, quantity_unit)
+             VALUES (:wp_id, :rank, :label, :site_label, :url, :image_url, :price, :price_currency, :price_captured_at, :quantity, :quantity_unit)
              ON CONFLICT(watchlist_product_id, rank)
              DO UPDATE SET label = :label, site_label = :site_label, url = :url, image_url = :image_url,
                             price = :price, price_currency = :price_currency, price_captured_at = :price_captured_at,
-                            quantity = :quantity'
+                            quantity = :quantity, quantity_unit = :quantity_unit'
         );
         $stmt->execute($params);
     }

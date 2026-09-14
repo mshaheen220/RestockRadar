@@ -8,10 +8,13 @@ use RestockRadar\Analysis\PackQuantity;
  * One-shot "grab the product name, image, and current price from a pasted URL" helper for the
  * Preferred Products form — not a price fetcher, not recurring, not the stage-2 site-fetcher
  * work (deferred; see PROJECT-BRIEF.md). Reads only standard metadata a page already publishes
- * for its own SEO/social-preview purposes (Open Graph tags, schema.org Product/Offer JSON-LD)
- * rather than scraping page-specific markup, so it has some chance of working even on sites that
- * block bot-like browsing — no guarantee, since sites that actively block scrapers may still
- * return a CAPTCHA or empty shell for a plain HTTP GET (confirmed on Walmart; see README).
+ * for its own SEO/social-preview purposes — Open Graph tags, schema.org Product/Offer JSON-LD,
+ * or schema.org microdata (`itemprop="price"` etc., the attribute-based form some sites use
+ * instead of/alongside JSON-LD — confirmed on Walmart, whose price only shows up this way on at
+ * least some product page templates) — rather than scraping page-specific markup, so it has some
+ * chance of working even on sites that block bot-like browsing — no guarantee, since sites that
+ * actively block scrapers may still return a CAPTCHA or empty shell for a plain HTTP GET
+ * (confirmed on Walmart; see README).
  *
  * The price/image captured here are a one-time snapshot for whenever a choice is added or
  * refreshed — not a live or recurring feed. See watchlist_product_choices in schema.sql.
@@ -22,7 +25,7 @@ final class ProductPreviewFetcher
         . '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
     /**
-     * @return array{title: ?string, image: ?string, price: ?float, currency: ?string, quantity: ?float}
+     * @return array{title: ?string, image: ?string, price: ?float, currency: ?string, quantity: ?float, quantity_unit: ?string}
      * @throws \RuntimeException if the URL is invalid/unsafe or the page couldn't be fetched
      */
     public function fetch(string $url): array
@@ -36,7 +39,7 @@ final class ProductPreviewFetcher
      * Pure parsing, split out from fetch() so it can be exercised with a hand-built HTML string
      * in tests without depending on a live, possibly bot-blocked, network request.
      *
-     * @return array{title: ?string, image: ?string, price: ?float, currency: ?string, quantity: ?float}
+     * @return array{title: ?string, image: ?string, price: ?float, currency: ?string, quantity: ?float, quantity_unit: ?string}
      */
     public function parseHtml(string $html): array
     {
@@ -57,17 +60,22 @@ final class ProductPreviewFetcher
             ?? $this->jsonLdImage($jsonLd);
 
         $price = $this->toFloatOrNull($offer['price'] ?? null)
-            ?? $this->toFloatOrNull($this->metaContent($xpath, 'product:price:amount'));
+            ?? $this->toFloatOrNull($this->metaContent($xpath, 'product:price:amount'))
+            ?? $this->toFloatOrNull($this->itemPropContent($xpath, 'price'));
 
         $currency = (is_array($offer) ? ($offer['priceCurrency'] ?? null) : null)
-            ?? $this->metaContent($xpath, 'product:price:currency');
+            ?? $this->metaContent($xpath, 'product:price:currency')
+            ?? $this->itemPropContent($xpath, 'priceCurrency');
+
+        $guess = $title !== null ? PackQuantity::guess($title) : null;
 
         return [
             'title' => $title !== null ? trim($title) : null,
             'image' => $image !== null ? trim($image) : null,
             'price' => $price,
             'currency' => $currency !== null ? trim((string) $currency) : null,
-            'quantity' => $title !== null ? PackQuantity::guess($title) : null,
+            'quantity' => $guess['quantity'] ?? null,
+            'quantity_unit' => $guess['unit'] ?? null,
         ];
     }
 
@@ -122,6 +130,24 @@ final class ProductPreviewFetcher
         }
 
         return $nodes !== false && $nodes->length > 0 ? $nodes->item(0)->nodeValue : null;
+    }
+
+    /**
+     * schema.org microdata: `<span itemprop="price">$4.67</span>` (value in the element's own
+     * text) or `<meta itemprop="price" content="4.67">` (value in a `content` attribute instead,
+     * used when the visible text is formatted differently from the raw value) — checks both.
+     */
+    private function itemPropContent(\DOMXPath $xpath, string $itemprop): ?string
+    {
+        $nodes = $xpath->query("//*[@itemprop='{$itemprop}']");
+        if ($nodes === false || $nodes->length === 0) {
+            return null;
+        }
+
+        $node = $nodes->item(0);
+        $content = $node->attributes?->getNamedItem('content')?->nodeValue;
+
+        return $content !== null && $content !== '' ? $content : $node->textContent;
     }
 
     private function tagText(\DOMXPath $xpath, string $query): ?string

@@ -24,7 +24,7 @@ import {
   type PriceStats,
   type WatchlistProduct,
 } from '../api';
-import { daysSince, formatMoney, isStalePrice, unitPriceBadge, unitPriceBadgeClass } from '../priceUtils';
+import { daysSince, formatMoney, isStalePrice, normalizeUnit, unitPriceBadge, unitPriceBadgeClass, unitsComparable } from '../priceUtils';
 import SiteIcon from './SiteIcon';
 
 const IMPORTANCE_LABEL: Record<Importance, string> = {
@@ -341,6 +341,7 @@ function ChoiceSlotForm({
   const [price, setPrice] = useState(existing?.price != null ? String(existing.price) : '');
   const [priceCurrency, setPriceCurrency] = useState(existing?.price_currency ?? '');
   const [quantity, setQuantity] = useState(existing?.quantity != null ? String(existing.quantity) : '');
+  const [quantityUnit, setQuantityUnit] = useState(existing?.quantity_unit ?? '');
   const [error, setError] = useState<string | null>(null);
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -360,6 +361,7 @@ function ChoiceSlotForm({
       if (result.price != null) setPrice(String(result.price));
       if (result.currency) setPriceCurrency(result.currency);
       if (result.quantity != null) setQuantity(String(result.quantity));
+      if (result.quantity_unit) setQuantityUnit(result.quantity_unit);
     } catch (err) {
       setFetchError((err as Error).message);
     } finally {
@@ -393,6 +395,7 @@ function ChoiceSlotForm({
         price: parsedPrice,
         price_currency: priceCurrency.trim() || null,
         quantity: parsedQuantity,
+        quantity_unit: quantityUnit.trim() || null,
       });
       onDone();
     } catch (err) {
@@ -504,8 +507,29 @@ function ChoiceSlotForm({
           className="w-20 rounded border border-brand-300 dark:border-brand-700 bg-white dark:bg-stone-950 px-2 py-1 text-sm"
         />
       </div>
+      <div>
+        <label htmlFor={`choice-quantity-unit-${productId}-${rank}`} className="block text-xs text-stone-500 dark:text-stone-400">
+          Unit captured in
+        </label>
+        <input
+          id={`choice-quantity-unit-${productId}-${rank}`}
+          value={quantityUnit}
+          onChange={(e) => setQuantityUnit(e.target.value)}
+          placeholder="fl oz, ct, l…"
+          title="The literal unit this quantity is in — a case of 12oz cans and a 2-liter bottle both just have 'a quantity' without this"
+          className="w-24 rounded border border-brand-300 dark:border-brand-700 bg-white dark:bg-stone-950 px-2 py-1 text-sm"
+        />
+      </div>
       {unitPricePreview && (
         <span className="text-xs text-stone-500 dark:text-stone-400 pb-1.5">= {unitPricePreview}</span>
+      )}
+      {quantityUnit.trim() && unitLabel && !unitsComparable(normalizeUnit(quantityUnit), normalizeUnit(unitLabel)) && (
+        <span
+          className="text-xs text-amber-700 dark:text-amber-400 pb-1.5"
+          title={`This product's unit is "${unitLabel}" — a quantity captured in "${quantityUnit}" can't be converted into that, so this choice won't get a unit-price comparison`}
+        >
+          ⚠ doesn't convert to "{unitLabel}"
+        </span>
       )}
       {image && <img src={image} alt="" className="w-10 h-10 object-cover rounded border border-stone-200 dark:border-stone-700" />}
       <button type="submit" className="rounded bg-brand-500 hover:bg-brand-600 text-white text-sm px-3 py-1.5">
@@ -531,6 +555,7 @@ function unitPriceInfo(choice: Choice, product: WatchlistProduct) {
     quantity: choice.quantity,
     currency: choice.price_currency,
     unitLabel: product.unit_label,
+    quantityUnit: choice.quantity_unit,
     targetUnitPrice: product.target_unit_price,
   });
 }
@@ -738,9 +763,18 @@ function PriceHistory({ product }: { product: WatchlistProduct }) {
           {choice_evaluations.map((e) => (
             <li key={e.rank} className="flex items-center gap-2 text-sm">
               <span className="truncate flex-1 min-w-0">{e.label}</span>
-              <span className={'shrink-0 text-xs px-1.5 py-0.5 rounded ' + VERDICT_CLASS[e.verdict]}>
-                {e.message ?? (e.verdict === 'insufficient_history' ? 'Not enough history yet' : 'Typical price')}
-              </span>
+              {e.comparable ? (
+                <span className={'shrink-0 text-xs px-1.5 py-0.5 rounded ' + VERDICT_CLASS[e.verdict]}>
+                  {e.message ?? (e.verdict === 'insufficient_history' ? 'Not enough history yet' : 'Typical price')}
+                </span>
+              ) : (
+                <span
+                  className="shrink-0 text-xs px-1.5 py-0.5 rounded text-amber-700 dark:text-amber-400"
+                  title={`Captured in "${e.quantity_unit}", which doesn't convert into this product's history — can't compare`}
+                >
+                  unit mismatch
+                </span>
+              )}
             </li>
           ))}
         </ul>

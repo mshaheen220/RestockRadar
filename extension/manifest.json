@@ -1,10 +1,22 @@
 {
   "manifest_version": 3,
   "name": "RestockRadar Product Grabber",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "description": "Grab the product on the current page and save it as a preferred product on a RestockRadar watchlist item.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": ["http://localhost/*", "http://127.0.0.1/*"]

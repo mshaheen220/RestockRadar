@@ -132,9 +132,16 @@
         <label for="currency">Currency</label>
         <input id="currency" type="text" placeholder="USD" />
       </div>
+    </div>
+
+    <div style="display:flex; gap:8px;">
       <div style="flex:1;">
         <label for="quantity">Quantity</label>
         <input id="quantity" type="number" step="any" min="0" placeholder="80" />
+      </div>
+      <div style="flex:1;">
+        <label for="quantity-unit" title="The literal unit the quantity is in — a case of 12oz cans and a 2-liter bottle both just have &quot;a quantity&quot; without this">Unit</label>
+        <input id="quantity-unit" type="text" placeholder="fl oz, ct, l…" />
       </div>
     </div>
 

@@ -8,6 +8,10 @@ const ACTIONABLE = new Set(['good_deal', 'all_time_low']);
 
 function ChoiceRow({ choice, unitLabel, isBest }: { choice: DealFinderChoice; unitLabel: string | null; isBest: boolean }) {
   const stale = isStalePrice(choice.price_captured_at);
+  // Only choices the backend could actually convert into the shared reference unit get labeled
+  // with it — a non-comparable one shows its OWN captured unit instead, so its price is never
+  // mislabeled as something it wasn't converted into.
+  const displayUnit = choice.comparable ? unitLabel : choice.quantity_unit;
 
   return (
     <li className="flex items-center justify-between gap-2 text-sm py-0.5">
@@ -22,13 +26,21 @@ function ChoiceRow({ choice, unitLabel, isBest }: { choice: DealFinderChoice; un
             stale · {daysSince(choice.price_captured_at as string)}d
           </span>
         )}
+        {!choice.comparable && (
+          <span
+            className="shrink-0 text-xs px-1 py-0.5 rounded bg-stone-200 dark:bg-stone-800 text-stone-500 dark:text-stone-400"
+            title="This unit doesn't convert into the other captured choices' unit, so it's shown on its own rather than ranked against them"
+          >
+            can't compare
+          </span>
+        )}
       </span>
       <span className="shrink-0 flex items-center gap-1.5">
         <span className="font-medium">
           {formatMoney(choice.unit_price, choice.price_currency)}
-          {unitLabel ? `/${unitLabel}` : '/unit'}
+          {displayUnit ? `/${displayUnit}` : '/unit'}
         </span>
-        {isBest && (
+        {isBest && choice.comparable && (
           <span className={'text-xs px-1.5 py-0.5 rounded ' + verdictBadgeClass(choice.verdict)}>{verdictLabel(choice.verdict)}</span>
         )}
       </span>

@@ -19,6 +19,9 @@ how often you reorder each one from your past purchases, and shows you that on o
   that item will never be a watchlist product).
 - Compares a price you've captured against your own purchase history (all-time low, recent average)
   and can raise an alert when it's a genuinely good one — on demand, via a button on the Dashboard.
+- Has a **Deal Finder** tab: press Analyze to see, across your whole watchlist at once, every
+  captured store price ranked cheapest-first against your own purchase history — a report you can
+  re-run any time, not just a one-off alert.
 
 ## What it doesn't do yet
 
@@ -70,10 +73,14 @@ field is always editable either way.
 Price alone can't tell you if something's a good deal — $18.99 is great for an 80-count box of
 K-cups and terrible for a 12-count box. That's what **Quantity** and **Good price** are for:
 
-- When you add or edit a preferred product, fill in **Quantity** — how many of the product's unit
-  (whatever you set as the watchlist item's unit, like "ct" or "oz") are in that package. The wand
-  button tries to guess this from the product title (e.g. it'll catch "80 Count" or "52 oz"), but
-  it's a guess — check it.
+- When you add or edit a preferred product, fill in **Quantity** and **Unit captured in** — how
+  many of something, and what that something actually is (fl oz, ct, l, oz…). The wand button
+  tries to guess both from the product title (e.g. it'll catch "80 Count" or "52 oz"), but it's a
+  guess — check it. The unit matters as much as the number: a case of twelve 12 fl oz cans and a
+  2-liter bottle both just have "a quantity" without it, and there's no way to tell "how many" a
+  price applies to. If a captured unit doesn't convert into this product's own unit (e.g. a count
+  next to a volume), you'll see a warning instead of a wrong-looking price — that choice just won't
+  get a unit-price comparison rather than an incorrect one.
 - On the product itself (click **Edit**), set **Good price (per unit)** — the threshold you already
   know from experience, like `0.35` for "$0.35 a K-cup or better."
 
@@ -107,6 +114,22 @@ few clicks in Chrome's extension settings, not published to the store), then whe
 product page on any site, click the extension icon and it grabs the name/thumbnail right from the
 page you're already looking at — since it's your own browser viewing the page normally, sites can't
 tell it apart from you just browsing, so it works even where the one-time lookup above doesn't.
+
+### Finding today's deals across your whole watchlist
+
+The **Deal Finder** tab answers a different question than the per-product Price History above:
+not "is this one product's captured price good," but "across everything I track, where should I
+actually buy today, even if I'm not out of it yet." Press **Analyze** and it re-checks every
+captured store price against that product's own history and shows you the full picture — split
+into **Good deals right now** and **everything else** — every time you run it, not just what's new
+since last time (that's what Dashboard alerts are for).
+
+Two things worth knowing:
+- It only reports on products where you've captured at least one price via the wand or extension —
+  it can't check live prices at stores itself. If a product's missing here, that's what the
+  Dashboard's **Price checks due** panel is for.
+- A "stale" flag on a captured price means it might not reflect today's actual price — recapture
+  it (wand or extension) before trusting a deal that's flagged that way.
 
 ### Linking a product to its purchase history
 
@@ -173,6 +196,9 @@ they don't apply.
 
 ## Using the dashboard
 
+- **Price checks due**: lists any preferred product whose captured price is missing or 30+ days
+  old — a captured price never updates on its own, so this is the nudge to go recapture it (wand
+  or extension) before trusting a deal verdict built on it.
 - **Theme**: use the **Day / Night / System** switch in the top-right corner. "System" matches your
   device's light/dark setting automatically.
 - **Version number**: shown next to the RestockRadar title in the header, so you can tell which build

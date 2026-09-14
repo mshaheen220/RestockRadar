@@ -39,6 +39,7 @@ require __DIR__ . '/../vendor/autoload.php';
 
 use RestockRadar\Alerts\AlertRepository;
 use RestockRadar\Analysis\DealDetector;
+use RestockRadar\Analysis\PackQuantity;
 use RestockRadar\Analysis\ReorderAnalyzer;
 use RestockRadar\Matching\CoverageService;
 use RestockRadar\Matching\ProductMatcher;
@@ -140,20 +141,49 @@ if (preg_match('#^/watchlist/(\d+)/price-stats$#', $path, $m) && $method === 'GE
     $aliases = $watchlistRepo->aliasesFor($watchlistId);
     $productNames = array_column($aliases, 'raw_product_name');
 
+    // See the /deal-finder route below for why a reference unit matters: a captured choice's
+    // quantity has to be converted into the SAME unit the history is being measured in before
+    // "10% below your recent average" means anything.
+    $referenceUnit = $product['unit_label'] !== null ? PackQuantity::normalizeUnit($product['unit_label']) : null;
+    if ($referenceUnit === null) {
+        foreach ($product['choices'] as $choice) {
+            if ($choice['quantity_unit'] !== null) {
+                $referenceUnit = $choice['quantity_unit'];
+                break;
+            }
+        }
+    }
+
     $detector = new DealDetector($pdo);
-    $stats = $detector->historicalStats($productNames);
+    $stats = $detector->historicalStats($productNames, $referenceUnit);
 
     $choiceEvaluations = [];
     foreach ($product['choices'] as $choice) {
         if ($choice['price'] === null || $choice['quantity'] === null || (float) $choice['quantity'] === 0.0) {
             continue;
         }
-        $unitPrice = $choice['price'] / $choice['quantity'];
+
+        $unit = $choice['quantity_unit'];
+        $quantity = (float) $choice['quantity'];
+        $comparable = true;
+        if ($unit !== null && $referenceUnit !== null && $unit !== $referenceUnit) {
+            $converted = PackQuantity::convert($quantity, $unit, $referenceUnit);
+            if ($converted === null) {
+                $comparable = false;
+            } else {
+                $quantity = $converted;
+            }
+        }
+
+        $unitPrice = $choice['price'] / $quantity;
+        $evaluation = $comparable ? $detector->evaluate($unitPrice, $stats) : ['verdict' => 'insufficient_history', 'message' => null];
         $choiceEvaluations[] = [
             'rank' => $choice['rank'],
             'label' => $choice['label'],
+            'quantity_unit' => $unit,
+            'comparable' => $comparable,
             'unit_price' => round($unitPrice, 4),
-        ] + $detector->evaluate($unitPrice, $stats);
+        ] + $evaluation;
     }
 
     respond(['stats' => $stats, 'choice_evaluations' => $choiceEvaluations]);
@@ -165,6 +195,15 @@ if (preg_match('#^/watchlist/(\d+)/price-stats$#', $path, $m) && $method === 'GE
  * own purchase history. A report you re-run any time, not a notification log: unlike /deals/detect
  * (which only surfaces what's NEW since last check and dedupes on exact price), this always shows
  * the full current picture, including deals you already knew about.
+ *
+ * Ranking choices against each other only means something when their quantities are in the same
+ * (or a convertible) unit — a case of 12 fl oz cans and a 2-liter bottle both just have "a
+ * quantity" unless something records which unit each was captured in (see quantity_unit in
+ * schema.sql). This converts every choice into one reference unit — the product's own unit_label
+ * if set, else whatever the first captured choice used — before comparing; a choice whose unit
+ * can't convert into that reference (e.g. a count-based size next to a volume one) still gets
+ * shown with its own honest unit price, just marked `comparable: false` and sorted after the ones
+ * that actually could be ranked together, instead of silently mixed in as if it were.
  */
 if ($path === '/deal-finder' && $method === 'GET') {
     $detector = new DealDetector($pdo);
@@ -177,14 +216,43 @@ if ($path === '/deal-finder' && $method === 'GET') {
 
         $aliases = $watchlistRepo->aliasesFor((int) $product['id']);
         $productNames = array_column($aliases, 'raw_product_name');
-        $stats = $detector->historicalStats($productNames);
+        $rawChoices = array_values(array_filter(
+            $product['choices'],
+            fn ($c) => $c['price'] !== null && $c['quantity'] !== null && (float) $c['quantity'] !== 0.0
+        ));
+
+        $referenceUnit = $product['unit_label'] !== null ? PackQuantity::normalizeUnit($product['unit_label']) : null;
+        if ($referenceUnit === null) {
+            foreach ($rawChoices as $choice) {
+                if ($choice['quantity_unit'] !== null) {
+                    $referenceUnit = $choice['quantity_unit'];
+                    break;
+                }
+            }
+        }
+
+        $stats = $detector->historicalStats($productNames, $referenceUnit);
 
         $choices = [];
-        foreach ($product['choices'] as $choice) {
-            if ($choice['price'] === null || $choice['quantity'] === null || (float) $choice['quantity'] === 0.0) {
-                continue;
+        foreach ($rawChoices as $choice) {
+            $unit = $choice['quantity_unit'];
+            $quantity = (float) $choice['quantity'];
+            $comparable = true;
+
+            if ($unit !== null && $referenceUnit !== null && $unit !== $referenceUnit) {
+                $converted = PackQuantity::convert($quantity, $unit, $referenceUnit);
+                if ($converted === null) {
+                    $comparable = false;
+                } else {
+                    $quantity = $converted;
+                }
             }
-            $unitPrice = $choice['price'] / $choice['quantity'];
+
+            $unitPrice = $choice['price'] / $quantity;
+            // A non-comparable choice's unit_price is in ITS OWN unit, not $referenceUnit — evaluating
+            // it against $stats (which IS in $referenceUnit) would be exactly the unit-mismatch bug
+            // this whole thing exists to avoid, so it gets no verdict at all rather than a bogus one.
+            $evaluation = $comparable ? $detector->evaluate($unitPrice, $stats) : ['verdict' => 'insufficient_history', 'message' => null];
             $choices[] = [
                 'rank' => $choice['rank'],
                 'label' => $choice['label'],
@@ -192,11 +260,13 @@ if ($path === '/deal-finder' && $method === 'GET') {
                 'price' => $choice['price'],
                 'price_currency' => $choice['price_currency'],
                 'price_captured_at' => $choice['price_captured_at'],
+                'quantity_unit' => $unit,
+                'comparable' => $comparable,
                 'unit_price' => round($unitPrice, 4),
-            ] + $detector->evaluate($unitPrice, $stats);
+            ] + $evaluation;
         }
 
-        usort($choices, fn ($a, $b) => $a['unit_price'] <=> $b['unit_price']);
+        usort($choices, fn ($a, $b) => ($b['comparable'] <=> $a['comparable']) ?: ($a['unit_price'] <=> $b['unit_price']));
 
         $report[] = [
             'id' => $product['id'],
@@ -275,6 +345,9 @@ if (preg_match('#^/watchlist/(\d+)/choices$#', $path, $m) && $method === 'POST')
     }
     if (array_key_exists('quantity', $body)) {
         $fields['quantity'] = $body['quantity'] !== null && $body['quantity'] !== '' ? (float) $body['quantity'] : null;
+    }
+    if (array_key_exists('quantity_unit', $body)) {
+        $fields['quantity_unit'] = !empty($body['quantity_unit']) ? PackQuantity::normalizeUnit((string) $body['quantity_unit']) : null;
     }
 
     $watchlistRepo->setChoice($watchlistId, $rank, $body['label'], $fields);

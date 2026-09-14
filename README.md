@@ -19,9 +19,12 @@ Five-stage pipeline, single direction:
    stats). Criteria describe what matters in the abstract; choices name concrete products; aliases
    are historical fact. `backend/src/Preview/ProductPreviewFetcher.php` (`GET /product-preview?url=`)
    does a one-time, non-recurring fetch of a pasted product URL to auto-fill a choice's name/thumbnail
-   from the page's own Open Graph / schema.org metadata — not price-checking, and not the deferred
-   stage-2 fetcher work; it hits the exact same bot-protection wall on sites like Walmart (confirmed:
-   returns a "Robot or human?" challenge page rather than product data), so treat it as best-effort.
+   from the page's own Open Graph tags, schema.org Product/Offer JSON-LD, or schema.org microdata
+   (`itemprop="price"` etc. — the attribute-based form; confirmed necessary for price specifically
+   on Walmart, which doesn't always populate the other two) — not price-checking, and not the
+   deferred stage-2 fetcher work; it hits the exact same bot-protection wall on sites like Walmart
+   (confirmed: returns a "Robot or human?" challenge page rather than product data), so treat it
+   as best-effort.
    `extension/` is the more reliable alternative for the same job: a small unpacked Chrome
    extension (see `extension/README.md`) that reads the same metadata but from inside the user's
    own browser session via `chrome.scripting.executeScript`, so it isn't making a bot-shaped
@@ -40,10 +43,18 @@ Five-stage pipeline, single direction:
    `fetch()` specifically so the metadata parsing can be exercised with a hand-built HTML string
    instead of a live, possibly bot-blocked, network request. A choice also captures `quantity` —
    the pack size the price is *for* ("80" for an 80-count K-cup box, in `watchlist_products.unit_label`'s
-   unit), without which price alone can't say whether $18.99 is a good deal. Both capture paths
-   guess it from the title via `RestockRadar\Analysis\PackQuantity::guess()` (PHP) / the mirrored
-   regex in `extension/popup.js` (JS) — best-effort only (schema.org has no standard pack-size
-   field), always shown back to the person to confirm/edit. `watchlist_products.target_unit_price`
+   unit), without which price alone can't say whether $18.99 is a good deal. A choice also captures
+   `quantity_unit` — the literal unit `quantity` is in (`floz`, `ct`, `l`...), since a case of 12 fl oz
+   cans and a 2-liter bottle both just have "a quantity" without something recording which unit each
+   is. Both capture paths guess quantity+unit from the title via `RestockRadar\Analysis\PackQuantity::guess()`
+   (PHP, returns `array{quantity, unit}`) / the mirrored regex in `extension/popup.js` (JS, nested
+   entirely inside `extractProductInfo()` since `chrome.scripting.executeScript`'s `func` option
+   can't close over module-scope helpers) — best-effort only (schema.org has no standard pack-size
+   field), always shown back to the person to confirm/edit. `PackQuantity::comparable()`/`::convert()`
+   decide whether two captured units can be judged against each other at all (same unit, or a fixed
+   conversion within the volume family [floz/ml/l/gal] or weight family [oz/lb/kg/g] — never across
+   those two, since that needs density, which is never guessed) — used wherever choices get ranked
+   against each other or against purchase history (see DealDetector below). `watchlist_products.target_unit_price`
    is the "good deal" threshold a person sets (e.g. 0.35 for "$0.35/ct or better"). Both this tab
    and the Coverage tab (below) render price/unit-price/good-deal-badge identically via
    `frontend/src/priceUtils.ts` (`formatMoney`, `unitPriceBadge`, `unitPriceBadgeClass`) —
@@ -53,11 +64,16 @@ Five-stage pipeline, single direction:
 3. **Price & purchase history** — SQLite (`backend/database/schema.sql`), loaded from `transaction_log.csv`
    via `backend/scripts/import_transactions.php`. `PackQuantity::guess()` is also run in bulk over
    all of `transactions` by `backend/scripts/compute_unit_prices.php`, populating
-   `pack_quantity`/`normalized_unit_price` per row (unlike the per-choice case, this *is* stored —
-   transaction rows are immutable historical fact once imported, so there's no live value for a
-   derived column to drift out of sync with). Incremental/idempotent (only fills rows where
-   `pack_quantity IS NULL`); re-run after importing more history, or after reset to force a full
-   recompute (see the script's docblock). Coverage's `last_price`/`last_pack_quantity`/
+   `pack_quantity`/`pack_quantity_unit`/`normalized_unit_price` per row (unlike the per-choice case,
+   this *is* stored — transaction rows are immutable historical fact once imported, so there's no
+   live value for a derived column to drift out of sync with). Re-runnable and safe: only touches
+   rows where `pack_quantity_source IS NULL OR = 'guessed'`, and always re-derives those from
+   scratch (not just `NULL` ones) so a `PackQuantity` regex fix retroactively corrects rows it
+   already touched wrong — e.g. it used to guess 12 (the per-can fl oz) for "12 fl oz, 12 Pack Cans"
+   instead of 144 (the true case total), until the trailing-multiplier pattern was broadened past
+   just "Pack of N" to also catch a bare "N Pack"/"N Count" following an already-matched size.
+   Never touches `pack_quantity_source = 'user'` rows (`CoverageService::setPackQuantity()`).
+   Coverage's `last_price`/`last_pack_quantity`/
    `last_normalized_unit_price` per item come from whichever single transaction is most recent for
    that (site, product_name) — a correlated scalar subquery per column in `CoverageService::items()`,
    not a join, so a same-day tie between two orders can't multiply-join and inflate `transaction_count`.
@@ -88,22 +104,42 @@ Five-stage pipeline, single direction:
    item annotated with its status — linked/unmatched/ignored — filterable by status/site/search via
    `/coverage/items`, so the same **Coverage** tab both triages new items and corrects existing links,
    e.g. unlinking something a brand-only match got wrong)
-   + `backend/src/Analysis/DealDetector.php` — the other half of stage 4: `historicalStats()` computes
-   all-time-low/average/rolling-average (last 180 days) unit price from `transactions.normalized_unit_price`
+   + `backend/src/Analysis/DealDetector.php` — the other half of stage 4: `historicalStats($productNames, $targetUnit)`
+   computes all-time-low/average/rolling-average (last 180 days) unit price from `transactions.normalized_unit_price`
    for a product's aliases; `evaluate()` compares a *currently captured* price (a `watchlist_product_choices`
    row — something you or the extension just looked at) against that history and returns a verdict
    (`all_time_low` / `good_deal` / `normal` / `insufficient_history`, the last requiring 3+ priced
    purchases). Comparing a past purchase against its own history would be circular, so the two prices
-   are deliberately kept separate — see the class docblock. `GET /watchlist/{id}/price-stats` exposes
-   this for one product (shown as "Price history" in Manage Watchlist); `POST /deals/detect` runs it
-   across every active product with at least one priced choice and inserts a row into `alerts` for
-   each qualifying verdict, deduped by exact message text (`AlertRepository::existsWithMessage()`) so
-   repeat runs don't spam identical findings — verified live: creates on first run, empty on a second
-   run with no change, and an acknowledge clears it from `/alerts` immediately.
+   are deliberately kept separate — see the class docblock. `$targetUnit` re-expresses every historical
+   row into one unit before averaging via `PackQuantity::convert()`, excluding a row outright if its
+   own unit is known and doesn't convert into `$targetUnit` (a legacy row with no unit on record is
+   kept as-is, same as before this parameter existed) — without it, a 2-liter bottle and a 12oz can
+   would both just contribute "a unit price" to the same average despite being priced per
+   different-sized units. `GET /watchlist/{id}/price-stats` and `GET /deal-finder` both compute a
+   reference unit (the product's own `unit_label`, or else whichever captured choice has a unit
+   first) and pass it through; a choice whose own unit can't convert into that reference gets
+   `comparable: false` in the response and no verdict at all (rather than one computed against
+   stats measured in a different unit) — it's still shown, just sorted after the ones that could
+   actually be ranked together. **Known, disclosed gap**: this unit-awareness covers choices and
+   transactions independently; it does not attempt cross-product unit reconciliation beyond what
+   `historicalStats`'s `$targetUnit` already does.
+   `POST /deals/detect` runs `evaluate()` across every active product with at least one priced choice
+   and inserts a row into `alerts` for each qualifying verdict, deduped by exact message text
+   (`AlertRepository::existsWithMessage()`) so repeat runs don't spam identical findings — verified
+   live: creates on first run, empty on a second run with no change, and an acknowledge clears it
+   from `/alerts` immediately. `GET /deal-finder` is the other consumer of the same evaluation logic,
+   but as a full report instead of a notification log: every active product with at least one priced
+   choice, choices sorted cheapest-first (comparable ones before non-comparable ones), re-computed
+   fresh on every call rather than dedup/diffed against a prior run — `frontend/src/components/DealFinder.tsx`
+   groups the result into "Good deals right now" (`good_deal`/`all_time_low`) vs. everything else,
+   and flags any choice whose `price_captured_at` is 30+ days stale (`priceUtils.ts`'s `isStalePrice`).
 5. **Alerts & dashboard** — `backend/src/Alerts` (API) + `frontend/` (React + TS + Tailwind dashboard).
    The Dashboard's Alerts panel has a "Check for deals" button (`POST /deals/detect`) and a dismiss
    action per alert (`POST /alerts/{id}/acknowledge`) — until this, `alerts` existed in the schema from
-   the very first commit but nothing had ever written to it.
+   the very first commit but nothing had ever written to it. The Dashboard also has a "Price checks
+   due" panel (`PriceFreshnessPanel` in `Dashboard.tsx`) computed purely client-side from data the
+   Dashboard already loads — no backend endpoint needed — listing any choice with no captured price
+   or one 30+ days old.
 
 ## Status
 

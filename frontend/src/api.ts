@@ -38,6 +38,7 @@ export type Choice = {
   price_currency: string | null;
   price_captured_at: string | null;
   quantity: number | null;
+  quantity_unit: string | null;
 };
 
 export type WatchlistProduct = {
@@ -99,6 +100,8 @@ export type DealVerdict = 'insufficient_history' | 'all_time_low' | 'good_deal' 
 export type ChoiceEvaluation = {
   rank: number;
   label: string;
+  quantity_unit: string | null;
+  comparable: boolean;
   unit_price: number;
   verdict: DealVerdict;
   message: string | null;
@@ -111,6 +114,8 @@ export type DealFinderChoice = {
   price: number;
   price_currency: string | null;
   price_captured_at: string | null;
+  quantity_unit: string | null;
+  comparable: boolean;
   unit_price: number;
   verdict: DealVerdict;
   message: string | null;
@@ -174,6 +179,7 @@ export const watchlistApi = {
       price?: number | null;
       price_currency?: string | null;
       quantity?: number | null;
+      quantity_unit?: string | null;
     },
   ) => request<WatchlistProduct>(`/watchlist/${id}/choices`, { method: 'POST', body: JSON.stringify(input) }),
   removeChoice: (id: number, rank: number) =>
@@ -227,7 +233,12 @@ export const sitesApi = {
 
 export const previewApi = {
   fetch: (url: string) =>
-    request<{ title: string | null; image: string | null; price: number | null; currency: string | null; quantity: number | null }>(
-      `/product-preview?url=${encodeURIComponent(url)}`,
-    ),
+    request<{
+      title: string | null;
+      image: string | null;
+      price: number | null;
+      currency: string | null;
+      quantity: number | null;
+      quantity_unit: string | null;
+    }>(`/product-preview?url=${encodeURIComponent(url)}`),
 };

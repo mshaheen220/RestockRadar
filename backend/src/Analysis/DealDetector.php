@@ -32,10 +32,17 @@ final class DealDetector
     }
 
     /**
+     * $targetUnit re-expresses every row in one unit before averaging — without it, a case of 12
+     * fl oz cans and a 2-liter bottle of the same product would both just contribute "a unit
+     * price" to the same average despite being priced per different-sized units. A row whose own
+     * unit is known and DOESN'T convert into $targetUnit is excluded outright rather than mixed
+     * in; a row with no unit on record at all (saved before pack_quantity_unit existed) is kept
+     * as-is, same as before this parameter existed, since there's nothing to check it against.
+     *
      * @return array{sample_size: int, min_unit_price: ?float, avg_unit_price: ?float,
      *               rolling_avg_unit_price: ?float, last_purchase_unit_price: ?float, last_purchase_date: ?string}
      */
-    public function historicalStats(array $productNames): array
+    public function historicalStats(array $productNames, ?string $targetUnit = null): array
     {
         if ($productNames === []) {
             return $this->emptyStats();
@@ -43,12 +50,28 @@ final class DealDetector
 
         $placeholders = implode(',', array_fill(0, count($productNames), '?'));
         $stmt = $this->pdo->prepare(
-            "SELECT txn_date, normalized_unit_price FROM transactions
+            "SELECT txn_date, unit_price, pack_quantity, pack_quantity_unit, normalized_unit_price FROM transactions
              WHERE product_name IN ({$placeholders}) AND normalized_unit_price IS NOT NULL
              ORDER BY txn_date ASC"
         );
         $stmt->execute($productNames);
-        $rows = $stmt->fetchAll();
+        $allRows = $stmt->fetchAll();
+
+        $rows = [];
+        foreach ($allRows as $row) {
+            $price = (float) $row['normalized_unit_price'];
+            $rowUnit = $row['pack_quantity_unit'];
+
+            if ($targetUnit !== null && $rowUnit !== null && $rowUnit !== $targetUnit) {
+                $convertedQuantity = PackQuantity::convert((float) $row['pack_quantity'], $rowUnit, $targetUnit);
+                if ($convertedQuantity === null) {
+                    continue;
+                }
+                $price = (float) $row['unit_price'] / $convertedQuantity;
+            }
+
+            $rows[] = ['txn_date' => $row['txn_date'], 'normalized_unit_price' => $price];
+        }
 
         if ($rows === []) {
             return $this->emptyStats();
