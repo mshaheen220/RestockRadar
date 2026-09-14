@@ -10,6 +10,8 @@ import {
   type Site,
   type WatchlistProduct,
 } from '../api';
+import { formatMoney, unitPriceBadge, unitPriceBadgeClass } from '../priceUtils';
+import SiteIcon from './SiteIcon';
 
 const PAGE_SIZE = 25;
 
@@ -478,6 +480,7 @@ export default function CoverageView() {
                     <th scope="col" className="py-1 pr-4">Item</th>
                     <th scope="col" className="py-1 pr-4">Site</th>
                     <th scope="col" className="py-1 pr-4">Status</th>
+                    <th scope="col" className="py-1 pr-4">Last price</th>
                     <th scope="col" className="py-1 pr-4">Times bought</th>
                     <th scope="col" className="py-1 pr-4">Last bought</th>
                     <th scope="col" className="py-1">Actions</th>
@@ -496,9 +499,41 @@ export default function CoverageView() {
                         />
                       </td>
                       <td className="py-1.5 pr-4">{item.product_name}</td>
-                      <td className="py-1.5 pr-4 text-stone-500 dark:text-stone-400">{item.site_name}</td>
+                      <td className="py-1.5 pr-4 text-stone-500 dark:text-stone-400">
+                        <span className="inline-flex items-center gap-1">
+                          <SiteIcon name={item.site_name} />
+                          {item.site_name}
+                        </span>
+                      </td>
                       <td className="py-1.5 pr-4">
                         <span className={`px-2 py-0.5 rounded-full text-xs ${STATUS_PILL[item.status]}`}>{item.status}</span>
+                      </td>
+                      <td className="py-1.5 pr-4">
+                        {item.last_price != null && <span className="text-brand-700 dark:text-brand-400 font-medium">{formatMoney(item.last_price)}</span>}
+                        {(() => {
+                          const badge = unitPriceBadge({
+                            price: item.last_price,
+                            quantity: item.last_pack_quantity,
+                            unitLabel: item.linked_unit_label,
+                            targetUnitPrice: item.linked_target_unit_price,
+                          });
+                          if (!badge) return null;
+                          return (
+                            <span
+                              className={'ml-1.5 text-xs px-1.5 py-0.5 rounded whitespace-nowrap ' + unitPriceBadgeClass(badge.isGoodDeal)}
+                              title={
+                                item.linked_target_unit_price != null
+                                  ? `Target: $${item.linked_target_unit_price}${item.linked_unit_label ? `/${item.linked_unit_label}` : ''}`
+                                  : item.status === 'linked'
+                                    ? 'Set a target unit price on this product to flag good deals'
+                                    : 'Link this item to a watchlist product to compare against its target price'
+                              }
+                            >
+                              {badge.text}
+                            </span>
+                          );
+                        })()}
+                        {item.last_price == null && <span className="text-stone-400 dark:text-stone-500">—</span>}
                       </td>
                       <td className="py-1.5 pr-4">{item.transaction_count}</td>
                       <td className="py-1.5 pr-4 text-stone-500 dark:text-stone-400">{item.last_purchased}</td>

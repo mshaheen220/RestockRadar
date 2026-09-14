@@ -97,11 +97,27 @@ final class CoverageService
         $countStmt->execute($params);
         $total = (int) $countStmt->fetchColumn();
 
+        // last_price/last_pack_quantity/last_normalized_unit_price come from whichever single
+        // transaction row is most recent for this (site, product_name) — a correlated scalar
+        // subquery per column rather than a join, so a same-day tie between two orders can't
+        // multiply-join and inflate transaction_count. linked_unit_label/target_unit_price are
+        // the LINKED watchlist product's own settings (only meaningful when status = linked),
+        // for the same green/red good-deal comparison Preferred Products uses.
         $stmt = $this->pdo->prepare(
             "SELECT t.site_id, s.name AS site_name, t.product_name,
                     COUNT(*) AS transaction_count, MAX(t.txn_date) AS last_purchased,
                     pa.id AS alias_id, pa.watchlist_product_id, wp.display_name AS linked_product_name,
-                    ipi.ignored_at
+                    wp.unit_label AS linked_unit_label, wp.target_unit_price AS linked_target_unit_price,
+                    ipi.ignored_at,
+                    (SELECT lt.unit_price FROM transactions lt
+                     WHERE lt.site_id = t.site_id AND lt.product_name = t.product_name
+                     ORDER BY lt.txn_date DESC, lt.id DESC LIMIT 1) AS last_price,
+                    (SELECT lt.pack_quantity FROM transactions lt
+                     WHERE lt.site_id = t.site_id AND lt.product_name = t.product_name
+                     ORDER BY lt.txn_date DESC, lt.id DESC LIMIT 1) AS last_pack_quantity,
+                    (SELECT lt.normalized_unit_price FROM transactions lt
+                     WHERE lt.site_id = t.site_id AND lt.product_name = t.product_name
+                     ORDER BY lt.txn_date DESC, lt.id DESC LIMIT 1) AS last_normalized_unit_price
              FROM transactions t
              {$joins}
              {$whereSql}

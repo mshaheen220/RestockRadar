@@ -17,7 +17,7 @@ final class WatchlistRepository
     public function all(): array
     {
         $stmt = $this->pdo->query(
-            'SELECT id, display_name, stated_rate, unit_label, active
+            'SELECT id, display_name, stated_rate, unit_label, target_unit_price, active
              FROM watchlist_products ORDER BY display_name ASC'
         );
         $products = $stmt->fetchAll();
@@ -25,6 +25,7 @@ final class WatchlistRepository
         foreach ($products as &$product) {
             $product['criteria'] = $this->criteriaFor((int) $product['id']);
             $product['aliases'] = $this->aliasesFor((int) $product['id']);
+            $product['choices'] = $this->choicesFor((int) $product['id']);
         }
 
         return $products;
@@ -33,7 +34,7 @@ final class WatchlistRepository
     public function find(int $id): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, display_name, stated_rate, unit_label, active FROM watchlist_products WHERE id = :id'
+            'SELECT id, display_name, stated_rate, unit_label, target_unit_price, active FROM watchlist_products WHERE id = :id'
         );
         $stmt->execute(['id' => $id]);
         $product = $stmt->fetch();
@@ -44,6 +45,7 @@ final class WatchlistRepository
 
         $product['criteria'] = $this->criteriaFor($id);
         $product['aliases'] = $this->aliasesFor($id);
+        $product['choices'] = $this->choicesFor($id);
 
         return $product;
     }
@@ -64,7 +66,7 @@ final class WatchlistRepository
 
     public function update(int $id, array $fields): void
     {
-        $allowed = ['display_name', 'stated_rate', 'unit_label', 'active'];
+        $allowed = ['display_name', 'stated_rate', 'unit_label', 'target_unit_price', 'active'];
         $sets = [];
         $params = ['id' => $id];
 
@@ -188,5 +190,72 @@ final class WatchlistRepository
             'site_id' => $siteId,
             'raw_product_name' => $rawProductName,
         ]);
+    }
+
+    /** Ranked 1 (first choice) through 5 (fourth backup); see watchlist_product_choices in schema.sql. */
+    public function choicesFor(int $watchlistProductId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, rank, label, site_label AS site_name, url, image_url, price, price_currency, price_captured_at, quantity
+             FROM watchlist_product_choices
+             WHERE watchlist_product_id = :id
+             ORDER BY rank ASC'
+        );
+        $stmt->execute(['id' => $watchlistProductId]);
+
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * $fields may include: site_label, url, image_url, price, price_currency, quantity. Any key
+     * omitted (not just null) keeps whatever that slot already had — e.g. editing just the label
+     * doesn't wipe out a previously captured price/image/quantity snapshot.
+     */
+    public function setChoice(int $watchlistProductId, int $rank, string $label, array $fields = []): void
+    {
+        $existingStmt = $this->pdo->prepare(
+            'SELECT site_label, url, image_url, price, price_currency, price_captured_at, quantity
+             FROM watchlist_product_choices WHERE watchlist_product_id = :wp_id AND rank = :rank'
+        );
+        $existingStmt->execute(['wp_id' => $watchlistProductId, 'rank' => $rank]);
+        $existing = $existingStmt->fetch() ?: [];
+
+        $pick = fn (string $key) => array_key_exists($key, $fields) ? $fields[$key] : ($existing[$key] ?? null);
+
+        $priceCapturedAt = array_key_exists('price', $fields)
+            ? ($fields['price'] !== null ? date('Y-m-d H:i:s') : null)
+            : ($existing['price_captured_at'] ?? null);
+
+        $params = [
+            'wp_id' => $watchlistProductId,
+            'rank' => $rank,
+            'label' => $label,
+            'site_label' => $pick('site_label'),
+            'url' => $pick('url'),
+            'image_url' => $pick('image_url'),
+            'price' => $pick('price'),
+            'price_currency' => $pick('price_currency'),
+            'price_captured_at' => $priceCapturedAt,
+            'quantity' => $pick('quantity'),
+        ];
+
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO watchlist_product_choices
+                (watchlist_product_id, rank, label, site_label, url, image_url, price, price_currency, price_captured_at, quantity)
+             VALUES (:wp_id, :rank, :label, :site_label, :url, :image_url, :price, :price_currency, :price_captured_at, :quantity)
+             ON CONFLICT(watchlist_product_id, rank)
+             DO UPDATE SET label = :label, site_label = :site_label, url = :url, image_url = :image_url,
+                            price = :price, price_currency = :price_currency, price_captured_at = :price_captured_at,
+                            quantity = :quantity'
+        );
+        $stmt->execute($params);
+    }
+
+    public function removeChoice(int $watchlistProductId, int $rank): void
+    {
+        $stmt = $this->pdo->prepare(
+            'DELETE FROM watchlist_product_choices WHERE watchlist_product_id = :wp_id AND rank = :rank'
+        );
+        $stmt->execute(['wp_id' => $watchlistProductId, 'rank' => $rank]);
     }
 }

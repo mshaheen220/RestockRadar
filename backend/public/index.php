@@ -11,6 +11,8 @@
  *   POST   /api/watchlist/{id}/criteria
  *   DELETE /api/watchlist/{id}/criteria/{criterionId}
  *   DELETE /api/watchlist/{id}/aliases/{aliasId}
+ *   POST   /api/watchlist/{id}/choices        { rank, label, site_name?, url? }
+ *   DELETE /api/watchlist/{id}/choices/{rank}
  *   GET    /api/watchlist/{id}/match-suggestions
  *   POST   /api/watchlist/{id}/match-suggestions/accept
  *   POST   /api/watchlist/{id}/match-suggestions/reject
@@ -19,6 +21,7 @@
  *   POST   /api/coverage/ignore
  *   DELETE /api/coverage/ignore
  *   GET    /api/sites
+ *   GET    /api/product-preview?url=
  *   GET    /api/alerts
  *   GET    /api/transactions/summary
  */
@@ -31,11 +34,22 @@ use RestockRadar\Alerts\AlertRepository;
 use RestockRadar\Analysis\ReorderAnalyzer;
 use RestockRadar\Matching\CoverageService;
 use RestockRadar\Matching\ProductMatcher;
+use RestockRadar\Preview\ProductPreviewFetcher;
 use RestockRadar\Storage\Database;
 use RestockRadar\Watchlist\WatchlistRepository;
 
 header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: ' . (getenv('RESTOCKRADAR_ALLOWED_ORIGIN') ?: '*'));
+
+// The frontend origin is the default; the browser extension's chrome-extension:// origin is
+// also allowed since it's a trusted first-party client, same as the frontend — both are just
+// this one person's own tools talking to their own home-network backend.
+$requestOrigin = $_SERVER['HTTP_ORIGIN'] ?? '';
+$configuredOrigin = getenv('RESTOCKRADAR_ALLOWED_ORIGIN') ?: '*';
+if ($configuredOrigin === '*' || $requestOrigin === $configuredOrigin || str_starts_with($requestOrigin, 'chrome-extension://')) {
+    header('Access-Control-Allow-Origin: ' . ($requestOrigin !== '' ? $requestOrigin : $configuredOrigin));
+} else {
+    header("Access-Control-Allow-Origin: {$configuredOrigin}");
+}
 header('Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
 
@@ -135,6 +149,51 @@ if (preg_match('#^/watchlist/(\d+)/criteria/(\d+)$#', $path, $m) && $method === 
 if (preg_match('#^/watchlist/(\d+)/aliases/(\d+)$#', $path, $m) && $method === 'DELETE') {
     [$watchlistId, $aliasId] = [(int) $m[1], (int) $m[2]];
     $watchlistRepo->removeAlias($watchlistId, $aliasId);
+    respond($watchlistRepo->find($watchlistId));
+}
+
+if (preg_match('#^/watchlist/(\d+)/choices$#', $path, $m) && $method === 'POST') {
+    $watchlistId = (int) $m[1];
+    $body = jsonBody();
+
+    if (!isset($body['rank']) || !is_int($body['rank']) && !ctype_digit((string) $body['rank'])) {
+        respond(['error' => 'rank is required and must be an integer 1-5'], 422);
+    }
+    $rank = (int) $body['rank'];
+    if ($rank < 1 || $rank > 5) {
+        respond(['error' => 'rank must be between 1 and 5'], 422);
+    }
+
+    if (!isset($body['label']) || trim((string) $body['label']) === '') {
+        respond(['error' => 'label is required'], 422);
+    }
+
+    $fields = [];
+    if (array_key_exists('site_name', $body)) {
+        $fields['site_label'] = !empty($body['site_name']) ? (string) $body['site_name'] : null;
+    }
+    foreach (['url', 'image_url'] as $key) {
+        if (array_key_exists($key, $body)) {
+            $fields[$key] = $body[$key] !== '' ? $body[$key] : null;
+        }
+    }
+    if (array_key_exists('price', $body)) {
+        $fields['price'] = $body['price'] !== null && $body['price'] !== '' ? (float) $body['price'] : null;
+    }
+    if (array_key_exists('price_currency', $body)) {
+        $fields['price_currency'] = $body['price_currency'] !== '' ? (string) $body['price_currency'] : null;
+    }
+    if (array_key_exists('quantity', $body)) {
+        $fields['quantity'] = $body['quantity'] !== null && $body['quantity'] !== '' ? (float) $body['quantity'] : null;
+    }
+
+    $watchlistRepo->setChoice($watchlistId, $rank, $body['label'], $fields);
+    respond($watchlistRepo->find($watchlistId), 201);
+}
+
+if (preg_match('#^/watchlist/(\d+)/choices/(\d+)$#', $path, $m) && $method === 'DELETE') {
+    [$watchlistId, $rank] = [(int) $m[1], (int) $m[2]];
+    $watchlistRepo->removeChoice($watchlistId, $rank);
     respond($watchlistRepo->find($watchlistId));
 }
 
@@ -242,6 +301,19 @@ if ($path === '/coverage/ignore' && $method === 'DELETE') {
 
     (new CoverageService($pdo))->unignore($siteId, $body['raw_product_name']);
     respond(['ignored' => false]);
+}
+
+if ($path === '/product-preview' && $method === 'GET') {
+    $url = isset($_GET['url']) ? trim((string) $_GET['url']) : '';
+    if ($url === '') {
+        respond(['error' => 'url is required'], 422);
+    }
+
+    try {
+        respond((new ProductPreviewFetcher())->fetch($url));
+    } catch (\RuntimeException $e) {
+        respond(['error' => $e->getMessage()], 502);
+    }
 }
 
 if ($path === '/alerts' && $method === 'GET') {

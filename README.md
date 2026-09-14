@@ -10,12 +10,57 @@ and household consumption profile this project is built around.
 
 Five-stage pipeline, single direction:
 
-1. **Watchlist & site config** — `backend/src/Watchlist`, table `watchlist_products` / `watchlist_product_criteria`
-   (open-ended {attribute, value, importance} rows — how you tell the engine what matters: brand, variety,
-   dietary need, etc. — instead of fixed brand/variety columns) / `product_aliases`.
+1. **Watchlist & site config** — `backend/src/Watchlist`, three distinct tables per watchlist product:
+   `watchlist_product_criteria` (open-ended {attribute, value, importance} rows — abstract rules like
+   brand/variety/dietary, used to score fuzzy matches), `watchlist_product_choices` (a person's own
+   ranked shortlist of up to 5 *specific* real products — rank 1 = first choice, 2-5 = substitutes,
+   each with an optional site + product-page URL — for future stage-2 price checks to try in order),
+   and `product_aliases` (raw purchase-history strings actually seen in `transactions`, for reorder
+   stats). Criteria describe what matters in the abstract; choices name concrete products; aliases
+   are historical fact. `backend/src/Preview/ProductPreviewFetcher.php` (`GET /product-preview?url=`)
+   does a one-time, non-recurring fetch of a pasted product URL to auto-fill a choice's name/thumbnail
+   from the page's own Open Graph / schema.org metadata — not price-checking, and not the deferred
+   stage-2 fetcher work; it hits the exact same bot-protection wall on sites like Walmart (confirmed:
+   returns a "Robot or human?" challenge page rather than product data), so treat it as best-effort.
+   `extension/` is the more reliable alternative for the same job: a small unpacked Chrome
+   extension (see `extension/README.md`) that reads the same metadata but from inside the user's
+   own browser session via `chrome.scripting.executeScript`, so it isn't making a bot-shaped
+   server-side request in the first place — it's just the user's browser looking at a page, on any
+   site. Saves straight to `POST /watchlist/{id}/choices`. `site_label` on `watchlist_product_choices`
+   is free text (not an FK to `sites`, unlike `product_aliases`) precisely so this can write an
+   arbitrary hostname the purchase-history import has never heard of. Both the URL-fetch and the
+   extension also capture `image_url`/`price`/`price_currency`/`price_captured_at` — parsed from
+   the same Open Graph/JSON-LD metadata (schema.org `Offer.price`, or the `product:price:*` OG
+   tags as fallback) — as a one-time snapshot of what the product looked like when the choice was
+   added, not a live or recurring price feed (that's `price_observations`, once stage-2 fetchers
+   exist). `WatchlistRepository::setChoice($id, $rank, $label, $fields)` treats `$fields` as a
+   sparse patch: a key that's absent leaves that column as whatever it already was, so a caller
+   that doesn't know about price/image (e.g. a future integration) can't accidentally null them
+   out just by not mentioning them. `ProductPreviewFetcher::parseHtml()` is split out from
+   `fetch()` specifically so the metadata parsing can be exercised with a hand-built HTML string
+   instead of a live, possibly bot-blocked, network request. A choice also captures `quantity` —
+   the pack size the price is *for* ("80" for an 80-count K-cup box, in `watchlist_products.unit_label`'s
+   unit), without which price alone can't say whether $18.99 is a good deal. Both capture paths
+   guess it from the title via `RestockRadar\Analysis\PackQuantity::guess()` (PHP) / the mirrored
+   regex in `extension/popup.js` (JS) — best-effort only (schema.org has no standard pack-size
+   field), always shown back to the person to confirm/edit. `watchlist_products.target_unit_price`
+   is the "good deal" threshold a person sets (e.g. 0.35 for "$0.35/ct or better"). Both this tab
+   and the Coverage tab (below) render price/unit-price/good-deal-badge identically via
+   `frontend/src/priceUtils.ts` (`formatMoney`, `unitPriceBadge`, `unitPriceBadgeClass`) —
+   deliberately not stored/derived columns on the frontend side, computed on read so they can
+   never drift out of sync with their inputs.
 2. **Site fetchers** — `backend/src/Fetchers` — **not implemented yet** (deferred; see Status below).
 3. **Price & purchase history** — SQLite (`backend/database/schema.sql`), loaded from `transaction_log.csv`
-   via `backend/scripts/import_transactions.php`.
+   via `backend/scripts/import_transactions.php`. `PackQuantity::guess()` is also run in bulk over
+   all of `transactions` by `backend/scripts/compute_unit_prices.php`, populating
+   `pack_quantity`/`normalized_unit_price` per row (unlike the per-choice case, this *is* stored —
+   transaction rows are immutable historical fact once imported, so there's no live value for a
+   derived column to drift out of sync with). Incremental/idempotent (only fills rows where
+   `pack_quantity IS NULL`); re-run after importing more history, or after reset to force a full
+   recompute (see the script's docblock). Coverage's `last_price`/`last_pack_quantity`/
+   `last_normalized_unit_price` per item come from whichever single transaction is most recent for
+   that (site, product_name) — a correlated scalar subquery per column in `CoverageService::items()`,
+   not a join, so a same-day tie between two orders can't multiply-join and inflate `transaction_count`.
 4. **Deal & habit analysis** — `backend/src/Analysis/ReorderAnalyzer.php` (reorder-interval calculation
    with recency-weighted averaging, half-life decay, so pre-move-out household size doesn't skew results)
    + `backend/src/Matching/ProductMatcher.php` (suggests links between a watchlist product and the raw

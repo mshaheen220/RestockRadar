@@ -27,14 +27,29 @@ export type MatchSuggestion = {
   missing_preferred: string[];
 };
 
+export type Choice = {
+  id: number;
+  rank: number;
+  label: string;
+  site_name: string | null;
+  url: string | null;
+  image_url: string | null;
+  price: number | null;
+  price_currency: string | null;
+  price_captured_at: string | null;
+  quantity: number | null;
+};
+
 export type WatchlistProduct = {
   id: number;
   display_name: string;
   stated_rate: string | null;
   unit_label: string | null;
+  target_unit_price: number | null;
   active: number;
   criteria: Criterion[];
   aliases: Alias[];
+  choices: Choice[];
 };
 
 export type CoverageSummary = {
@@ -57,7 +72,12 @@ export type CoverageItem = {
   alias_id: number | null;
   watchlist_product_id: number | null;
   linked_product_name: string | null;
+  linked_unit_label: string | null;
+  linked_target_unit_price: number | null;
   ignored_at: string | null;
+  last_price: number | null;
+  last_pack_quantity: number | null;
+  last_normalized_unit_price: number | null;
   status: CoverageStatus;
 };
 
@@ -81,7 +101,10 @@ export const watchlistApi = {
   list: () => request<WatchlistProduct[]>('/watchlist'),
   create: (input: { display_name: string; stated_rate?: string | null; unit_label?: string | null }) =>
     request<WatchlistProduct>('/watchlist', { method: 'POST', body: JSON.stringify(input) }),
-  update: (id: number, fields: Partial<Pick<WatchlistProduct, 'display_name' | 'stated_rate' | 'unit_label' | 'active'>>) =>
+  update: (
+    id: number,
+    fields: Partial<Pick<WatchlistProduct, 'display_name' | 'stated_rate' | 'unit_label' | 'target_unit_price' | 'active'>>,
+  ) =>
     request<WatchlistProduct>(`/watchlist/${id}`, { method: 'PATCH', body: JSON.stringify(fields) }),
   remove: (id: number) => request<{ deleted: number }>(`/watchlist/${id}`, { method: 'DELETE' }),
   addCriterion: (id: number, input: { attribute_key: string; attribute_value: string; importance: Importance }) =>
@@ -90,6 +113,21 @@ export const watchlistApi = {
     request<WatchlistProduct>(`/watchlist/${id}/criteria/${criterionId}`, { method: 'DELETE' }),
   removeAlias: (id: number, aliasId: number) =>
     request<WatchlistProduct>(`/watchlist/${id}/aliases/${aliasId}`, { method: 'DELETE' }),
+  setChoice: (
+    id: number,
+    input: {
+      rank: number;
+      label: string;
+      site_name?: string | null;
+      url?: string | null;
+      image_url?: string | null;
+      price?: number | null;
+      price_currency?: string | null;
+      quantity?: number | null;
+    },
+  ) => request<WatchlistProduct>(`/watchlist/${id}/choices`, { method: 'POST', body: JSON.stringify(input) }),
+  removeChoice: (id: number, rank: number) =>
+    request<WatchlistProduct>(`/watchlist/${id}/choices/${rank}`, { method: 'DELETE' }),
   matchSuggestions: (id: number) => request<MatchSuggestion[]>(`/watchlist/${id}/match-suggestions`),
   acceptSuggestion: (id: number, input: { site_name: string; raw_product_name: string }) =>
     request<WatchlistProduct>(`/watchlist/${id}/match-suggestions/accept`, { method: 'POST', body: JSON.stringify(input) }),
@@ -114,4 +152,11 @@ export const coverageApi = {
 
 export const sitesApi = {
   list: () => request<Site[]>('/sites'),
+};
+
+export const previewApi = {
+  fetch: (url: string) =>
+    request<{ title: string | null; image: string | null; price: number | null; currency: string | null; quantity: number | null }>(
+      `/product-preview?url=${encodeURIComponent(url)}`,
+    ),
 };

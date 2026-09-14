@@ -14,12 +14,13 @@ CREATE TABLE IF NOT EXISTS sites (
 
 -- Stage 1: manually curated watchlist of products to track/analyze
 CREATE TABLE IF NOT EXISTS watchlist_products (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    display_name    TEXT NOT NULL,                -- e.g. 'Oat milk'
-    stated_rate     TEXT,                          -- free-text from household, e.g. '4 containers/week'
-    unit_label      TEXT,                           -- e.g. 'oz', 'ct' — for unit-price normalization
-    active          INTEGER NOT NULL DEFAULT 1,
-    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    display_name       TEXT NOT NULL,                -- e.g. 'Oat milk'
+    stated_rate        TEXT,                          -- free-text from household, e.g. '4 containers/week'
+    unit_label         TEXT,                           -- e.g. 'oz', 'ct' — for unit-price normalization
+    target_unit_price  REAL,                           -- "a good deal" threshold, e.g. 0.35 for $0.35/ct
+    active             INTEGER NOT NULL DEFAULT 1,
+    created_at         TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- What actually matters about a product, e.g. (attribute_key='variety', attribute_value='Donut Shop',
@@ -34,6 +35,36 @@ CREATE TABLE IF NOT EXISTS watchlist_product_criteria (
     importance            TEXT NOT NULL DEFAULT 'preferred'
                               CHECK (importance IN ('must_match', 'preferred', 'flexible')),
     UNIQUE(watchlist_product_id, attribute_key)
+);
+
+-- The specific real-world products a person would actually buy for this watchlist entry, ranked:
+-- rank 1 is the first choice, ranks 2-5 are substitutes in preference order. Distinct from
+-- watchlist_product_criteria (abstract "what matters" rules used for fuzzy matching) and from
+-- product_aliases (raw purchase-history strings) — this is a person's own curated shortlist,
+-- e.g. for future stage-2 price checks: check the first choice, fall back to alternates.
+-- site_label is free text, NOT a foreign key to `sites` — that table is purchase-history import
+-- sources (Walmart/Amazon/...); a preferred product can come from any site at all (the browser
+-- extension in particular writes whatever hostname the page was on).
+-- image_url/price/price_currency/price_captured_at are a one-time snapshot from whenever the
+-- choice was added or last refreshed (via the URL fetch or the browser extension) — NOT a live or
+-- recurring price feed. That's what price_observations below is for, once stage-2 fetchers exist.
+-- quantity is the pack size this price is FOR (e.g. 80 for an 80-count K-cup box), in the parent
+-- watchlist_products.unit_label's unit — without it, price alone can't say whether $18.99 is good
+-- or bad. price / quantity is the unit price, compared against target_unit_price to flag a deal;
+-- computed on read, not stored, so it can never drift out of sync with its inputs.
+CREATE TABLE IF NOT EXISTS watchlist_product_choices (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    watchlist_product_id  INTEGER NOT NULL REFERENCES watchlist_products(id) ON DELETE CASCADE,
+    rank                  INTEGER NOT NULL CHECK (rank BETWEEN 1 AND 5),
+    label                 TEXT NOT NULL,             -- e.g. 'Planet Oat Original Oatmilk, 52 oz'
+    site_label            TEXT,                       -- e.g. 'Walmart', 'target.com' — free text
+    url                   TEXT,                       -- optional link to the product page
+    image_url             TEXT,
+    price                 REAL,
+    price_currency        TEXT,
+    price_captured_at     TEXT,
+    quantity               REAL,
+    UNIQUE(watchlist_product_id, rank)
 );
 
 -- Links a watchlist product to the raw product_name/product_id values seen in transactions,
@@ -69,20 +100,28 @@ CREATE TABLE IF NOT EXISTS ignored_purchase_items (
 );
 
 -- Stage 3: unified purchase history, loaded from transaction_log.csv (kept out of git; see .gitignore)
+-- Note the naming collision with watchlist_product_choices: `quantity`/`unit_price` here come
+-- straight from the source CSVs and mean "how many packages were bought" / "price per package" —
+-- e.g. quantity=1, unit_price=18.89 for one $18.89 item. pack_quantity/normalized_unit_price below
+-- are a different, later-added axis: how many of the product's own unit (oz/ct/etc., guessed from
+-- product_name — see PackQuantity) are INSIDE one package, and the resulting price per oz/ct.
+-- Populated by scripts/compute_unit_prices.php, safe to leave NULL where no guess was possible.
 CREATE TABLE IF NOT EXISTS transactions (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    txn_date         TEXT NOT NULL,
-    site_id          INTEGER NOT NULL REFERENCES sites(id),
-    order_id         TEXT NOT NULL,
-    product_name     TEXT NOT NULL,
-    quantity         REAL NOT NULL,
-    unit_price       REAL NOT NULL,
-    total_price      REAL NOT NULL,
-    shipping_charge  REAL NOT NULL DEFAULT 0,
-    product_id       TEXT,                  -- ASIN / site item code, not a universal UPC
-    category         TEXT,                  -- only populated for Amazon today
-    delivery_status  TEXT,
-    recent_24mo      INTEGER NOT NULL DEFAULT 0,  -- flag from source data, NOT a filter — see brief
+    id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+    txn_date               TEXT NOT NULL,
+    site_id                INTEGER NOT NULL REFERENCES sites(id),
+    order_id               TEXT NOT NULL,
+    product_name           TEXT NOT NULL,
+    quantity               REAL NOT NULL,
+    unit_price             REAL NOT NULL,
+    total_price            REAL NOT NULL,
+    shipping_charge        REAL NOT NULL DEFAULT 0,
+    product_id             TEXT,                  -- ASIN / site item code, not a universal UPC
+    category               TEXT,                  -- only populated for Amazon today
+    delivery_status        TEXT,
+    recent_24mo            INTEGER NOT NULL DEFAULT 0,  -- flag from source data, NOT a filter — see brief
+    pack_quantity          REAL,                   -- guessed oz/ct inside one package, from product_name
+    normalized_unit_price  REAL,                    -- unit_price / pack_quantity — price per oz/ct
     UNIQUE(site_id, order_id, product_name, txn_date, total_price)
 );
 

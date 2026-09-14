@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "RestockRadar Product Grabber",
+  "version": "1.0.0",
+  "description": "Grab the product on the current page and save it as a preferred product on a RestockRadar watchlist item.",
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["http://localhost/*", "http://127.0.0.1/*"]
+}
