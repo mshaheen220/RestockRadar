@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RestockRadar Product Grabber",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Grab the product on the current page and save it as a preferred product on a RestockRadar watchlist item.",
   "icons": {
     "16": "icons/icon16.png",

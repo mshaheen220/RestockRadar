@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { dealsApi, type DealFinderChoice, type DealFinderProduct } from '../api';
-import { daysSince, formatMoney, isStalePrice, verdictBadgeClass, verdictLabel } from '../priceUtils';
+import { daysSince, formatMoney, isStalePrice, stripSiteSuffix, verdictBadgeClass, verdictLabel } from '../priceUtils';
+import RankBadge from './RankBadge';
 import SiteIcon from './SiteIcon';
 
 const ACTIONABLE = new Set(['good_deal', 'all_time_low']);
@@ -16,8 +17,11 @@ function ChoiceRow({ choice, unitLabel, isBest }: { choice: DealFinderChoice; un
   return (
     <li className="flex items-center justify-between gap-2 text-sm py-0.5">
       <span className="flex items-center gap-1.5 min-w-0">
+        <RankBadge rank={choice.rank} />
         {choice.site_name && <SiteIcon name={choice.site_name} />}
-        <span className="truncate text-stone-600 dark:text-stone-400">{choice.site_name ?? choice.label}</span>
+        <span className="truncate text-stone-600 dark:text-stone-400" title={choice.label}>
+          {stripSiteSuffix(choice.label)}
+        </span>
         {stale && (
           <span
             className="shrink-0 text-xs px-1 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"

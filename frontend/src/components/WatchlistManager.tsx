@@ -24,7 +24,17 @@ import {
   type PriceStats,
   type WatchlistProduct,
 } from '../api';
-import { daysSince, formatMoney, isStalePrice, normalizeUnit, unitPriceBadge, unitPriceBadgeClass, unitsComparable } from '../priceUtils';
+import {
+  daysSince,
+  formatMoney,
+  isStalePrice,
+  normalizeUnit,
+  stripSiteSuffix,
+  unitPriceBadge,
+  unitPriceBadgeClass,
+  unitsComparable,
+} from '../priceUtils';
+import RankBadge, { SLOT_LABEL } from './RankBadge';
 import SiteIcon from './SiteIcon';
 
 const IMPORTANCE_LABEL: Record<Importance, string> = {
@@ -293,31 +303,6 @@ function MatchReview({ product, onChange }: { product: WatchlistProduct; onChang
         </div>
       )}
     </div>
-  );
-}
-
-const SLOT_LABEL: Record<number, string> = {
-  1: 'First choice',
-  2: 'Backup #1',
-  3: 'Backup #2',
-  4: 'Backup #3',
-  5: 'Backup #4',
-};
-
-function RankBadge({ rank }: { rank: number }) {
-  return (
-    <span
-      aria-hidden="true"
-      title={SLOT_LABEL[rank]}
-      className={
-        'shrink-0 flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold ' +
-        (rank === 1
-          ? 'bg-brand-500 text-white'
-          : 'border border-stone-300 dark:border-stone-600 text-stone-500 dark:text-stone-400')
-      }
-    >
-      {rank}
-    </span>
   );
 }
 
@@ -612,8 +597,8 @@ function PreferredProducts({ product, onChange }: { product: WatchlistProduct; o
                       className="shrink-0 w-8 h-8 object-cover rounded border border-stone-200 dark:border-stone-700"
                     />
                   )}
-                  <span className="flex-1 min-w-0">
-                    {choice.label}
+                  <span className="flex-1 min-w-0" title={choice.label}>
+                    {stripSiteSuffix(choice.label)}
                     {choice.site_name && (
                       <span className="ml-1.5 inline-flex items-center gap-1 text-xs text-stone-500 dark:text-stone-400">
                         <SiteIcon name={choice.site_name} />({choice.site_name})

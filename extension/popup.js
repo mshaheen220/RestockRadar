@@ -1,5 +1,40 @@
 const DEFAULT_BACKEND_URL = 'http://localhost:8734/api';
 
+// Populated by loadProducts(), read by updateSlotOptions() — so picking a slot can show what's
+// already there without a second network request (GET /watchlist already includes each
+// product's existing choices).
+let allProducts = [];
+
+const SLOT_LABEL = { 1: 'First choice', 2: 'Backup #1', 3: 'Backup #2', 4: 'Backup #3', 5: 'Backup #4' };
+
+function truncate(text, max) {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+/**
+ * Saving to an occupied slot silently overwrites whatever was there — that's fine, but a person
+ * should be able to see that BEFORE picking a slot, not discover it after the fact. Rebuilds the
+ * Slot dropdown to show each occupied slot's current item, so overwriting one is a deliberate
+ * choice rather than an accident.
+ */
+function updateSlotOptions() {
+  const rankSelect = document.getElementById('rank');
+  const previousValue = rankSelect.value || '1';
+  const productId = document.getElementById('product').value;
+  const product = allProducts.find((p) => String(p.id) === productId);
+  const byRank = new Map((product?.choices ?? []).map((c) => [c.rank, c]));
+
+  rankSelect.innerHTML = '';
+  for (let rank = 1; rank <= 5; rank++) {
+    const existing = byRank.get(rank);
+    const option = document.createElement('option');
+    option.value = String(rank);
+    option.textContent = existing ? `${SLOT_LABEL[rank]} — ${truncate(existing.label, 40)}` : `${SLOT_LABEL[rank]} (empty)`;
+    rankSelect.appendChild(option);
+  }
+  rankSelect.value = previousValue;
+}
+
 /**
  * Runs inside the active page's own context (via chrome.scripting.executeScript), so it sees
  * whatever actually rendered in the user's real browser session — the same reason this approach
@@ -163,10 +198,11 @@ async function loadProducts(backendUrl) {
   try {
     const res = await fetch(`${backendUrl}/watchlist`);
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-    const products = await res.json();
+    allProducts = await res.json();
 
-    if (products.length === 0) {
+    if (allProducts.length === 0) {
       select.innerHTML = '<option value="">No watchlist items yet</option>';
+      updateSlotOptions();
       return;
     }
 
@@ -175,15 +211,18 @@ async function loadProducts(backendUrl) {
     // whichever item happens to load first. Without this, the browser would default the select
     // to its first real option, and the "pick something" check below would never be able to fire.
     select.innerHTML = '<option value="">Choose a watchlist item…</option>';
-    for (const p of products) {
+    for (const p of allProducts) {
       const option = document.createElement('option');
       option.value = String(p.id);
       option.textContent = p.display_name;
       select.appendChild(option);
     }
+    updateSlotOptions();
   } catch (err) {
+    allProducts = [];
     select.innerHTML = '<option value="">Could not load watchlist</option>';
     setStatus(`Couldn't reach RestockRadar at ${backendUrl} — check the backend settings below.`, 'error');
+    updateSlotOptions();
   }
 }
 
@@ -192,6 +231,7 @@ async function init() {
   document.getElementById('backend-url').value = backendUrl;
 
   loadProducts(backendUrl);
+  document.getElementById('product').addEventListener('change', updateSlotOptions);
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const [{ result }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: extractProductInfo });

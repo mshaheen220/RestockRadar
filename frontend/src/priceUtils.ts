@@ -8,6 +8,21 @@ export function formatMoney(amount: number, currency?: string | null): string {
   return `${symbol}${amount.toFixed(2)}`;
 }
 
+const DOMAIN_TLD = '(?:com|org|net|co|io)';
+const LEADING_SITE_PATTERN = new RegExp(`^[A-Za-z0-9][A-Za-z0-9.-]*\\.${DOMAIN_TLD}\\s*:\\s*`, 'i');
+const TRAILING_SITE_PATTERN = new RegExp(`\\s*[-–—:]\\s*[A-Za-z0-9][A-Za-z0-9.-]*\\.${DOMAIN_TLD}\\.?\\s*$`, 'i');
+
+/**
+ * A captured title often already names its own site — "...- Walmart.com" trailing, or
+ * "Amazon.com: ..." leading — which is redundant wherever that title is already shown next to a
+ * SiteIcon. Strips just that (a domain-shaped token, not any dash/colon in the title), so "5.3 oz
+ * Cup, 4 Pack - Walmart.com" becomes "5.3 oz Cup, 4 Pack" but "Coffee Mate Coconut Crème... -
+ * Eco Friendly - Extended Life" is left alone, since neither trailing segment is a domain.
+ */
+export function stripSiteSuffix(label: string): string {
+  return label.replace(LEADING_SITE_PATTERN, '').replace(TRAILING_SITE_PATTERN, '').trim();
+}
+
 // Mirrors backend/src/Analysis/PackQuantity.php's UNIT_MAP/VOLUME_TO_FLOZ/WEIGHT_TO_GRAMS — same
 // reasoning for reimplementing in JS/TS as the browser extension's regex mirror: this needs to run
 // client-side. Only the normalize/comparable/convert half is needed here (the regex-guessing half
