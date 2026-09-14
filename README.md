@@ -94,9 +94,10 @@ Five-stage pipeline, single direction:
    built (would need a drill-down view Coverage doesn't have). Rejects with a clear message
    ("groups N purchases") rather than silently guessing which one you meant. `total_price` is always
    recomputed as `quantity × unit_price`, never taken as separate input, so the two can't disagree.
-4. **Deal & habit analysis** — `backend/src/Analysis/ReorderAnalyzer.php` (reorder-interval calculation
-   with recency-weighted averaging, half-life decay, so pre-move-out household size doesn't skew results)
-   + `backend/src/Matching/ProductMatcher.php` (suggests links between a watchlist product and the raw
+4. **Deal analysis** (originally scoped as "deal & habit analysis" — the habit/reorder-timing half,
+   `ReorderAnalyzer.php` + `stated_rate` + the unused `reorder_stats` table, was removed entirely:
+   restock timing isn't a goal here, and none of it was ever wired into the UI) —
+   `backend/src/Matching/ProductMatcher.php` (suggests links between a watchlist product and the raw
    `product_name` strings in purchase history, using word overlap plus the "what matters" criteria as
    scoring/filtering signal — deterministic string matching, not ML; a person reviews and accepts/rejects
    every suggestion via `/watchlist/{id}/match-suggestions`, nothing is linked automatically)
@@ -144,7 +145,7 @@ Five-stage pipeline, single direction:
 ## Status
 
 - Stages 1, 3, 4, 5 scaffolded: watchlist CRUD (with a "what matters" criteria editor — see
-  `frontend/src/components/WatchlistManager.tsx`), SQLite schema + CSV import, reorder-interval analysis,
+  `frontend/src/components/WatchlistManager.tsx`), SQLite schema + CSV import,
   deal detection against real purchase history, fuzzy match suggestions (accept/reject review UI, same
   component), a minimal JSON API, and a dashboard UI (summary stats, a now-functional alerts list,
   watchlist table).
@@ -230,7 +231,7 @@ backend/            PHP API + analysis (stages 1, 3, 4, 5)
   src/Watchlist/     stage 1 — watchlist CRUD
   src/Fetchers/      stage 2 — contract only, not implemented
   src/Storage/       PDO/SQLite connection
-  src/Analysis/      stage 4 — reorder-interval stats
+  src/Analysis/      stage 4 — deal detection (PackQuantity, DealDetector)
   src/Alerts/         stage 5 — alerts API
   database/          schema.sql + generated .sqlite (gitignored)
   scripts/           CSV import

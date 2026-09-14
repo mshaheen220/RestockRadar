@@ -5,10 +5,10 @@ namespace RestockRadar\Analysis;
 use PDO;
 
 /**
- * Stage 4: the other half of "deal & habit analysis" — ReorderAnalyzer answers "when will I need
- * to buy this again"; this answers "is the price I'm looking at actually good, based on what I've
- * paid before." Deliberately descriptive statistics over transactions.normalized_unit_price, not
- * ML, same as the rest of this app.
+ * Stage 4: answers "is the price I'm looking at actually good, based on what I've paid before."
+ * Deliberately descriptive statistics over transactions.normalized_unit_price, not ML, same as
+ * the rest of this app. (An earlier ReorderAnalyzer answered "when will I need to buy this
+ * again" — removed along with stated_rate, since restock timing isn't a goal of this app.)
  *
  * Two separate prices matter here and must not be confused:
  *   - Historical stats come from `transactions` — what you've actually PAID before.

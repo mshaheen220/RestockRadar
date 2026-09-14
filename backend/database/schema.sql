@@ -16,7 +16,6 @@ CREATE TABLE IF NOT EXISTS sites (
 CREATE TABLE IF NOT EXISTS watchlist_products (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
     display_name       TEXT NOT NULL,                -- e.g. 'Oat milk'
-    stated_rate        TEXT,                          -- free-text from household, e.g. '4 containers/week'
     unit_label         TEXT,                           -- e.g. 'oz', 'ct' — for unit-price normalization
     target_unit_price  REAL,                           -- "a good deal" threshold, e.g. 0.35 for $0.35/ct
     active             INTEGER NOT NULL DEFAULT 1,
@@ -154,17 +153,6 @@ CREATE TABLE IF NOT EXISTS price_observations (
     shipping_charge       REAL NOT NULL DEFAULT 0,
     effective_price       REAL NOT NULL,   -- price + amortized/threshold-aware shipping
     in_stock              INTEGER NOT NULL DEFAULT 1
-);
-
--- Stage 4: derived reorder-interval stats per watchlist product (recomputed by the analysis job)
-CREATE TABLE IF NOT EXISTS reorder_stats (
-    watchlist_product_id  INTEGER PRIMARY KEY REFERENCES watchlist_products(id) ON DELETE CASCADE,
-    avg_interval_days      REAL,
-    median_interval_days   REAL,
-    last_purchase_date     TEXT,
-    next_expected_date     TEXT,
-    sample_size            INTEGER NOT NULL DEFAULT 0,
-    updated_at             TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- Stage 5: alerts surfaced to the dashboard/notifications

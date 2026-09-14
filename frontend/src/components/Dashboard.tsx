@@ -227,24 +227,22 @@ export default function Dashboard() {
         {watchlist && watchlist.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
-              <caption className="sr-only">Watchlist products and target rates</caption>
+              <caption className="sr-only">Watchlist products and what matters about each one</caption>
               <thead>
                 <tr className="text-brand-700 dark:text-brand-400 border-b border-brand-200 dark:border-brand-800">
                   <th scope="col" className="py-1 pr-4">Product</th>
-                  <th scope="col" className="py-1 pr-4">What matters</th>
-                  <th scope="col" className="py-1">Stated rate</th>
+                  <th scope="col" className="py-1">What matters</th>
                 </tr>
               </thead>
               <tbody>
                 {watchlist.map((item) => (
                   <tr key={item.id} className="border-b border-stone-100 dark:border-stone-800 last:border-0">
                     <td className="py-1 pr-4">{item.display_name}</td>
-                    <td className="py-1 pr-4">
+                    <td className="py-1">
                       {item.criteria.length === 0
                         ? '—'
                         : item.criteria.map((c) => `${c.attribute_key}: ${c.attribute_value}`).join(', ')}
                     </td>
-                    <td className="py-1">{item.stated_rate ?? '—'}</td>
                   </tr>
                 ))}
               </tbody>

@@ -34,10 +34,10 @@ how often you reorder each one from your past purchases, and shows you that on o
 
 Open the **Manage Watchlist** tab. Each product is a collapsed row — click anywhere on its name to
 expand it and see everything below (criteria, preferred products, purchase history). Collapsed, you
-still see a one-line summary: target rate, how many criteria and linked purchases it has, and its
-first-choice product if you've set one.
+still see a one-line summary: its unit and good-price threshold (if set), how many criteria and
+linked purchases it has, and its first-choice product if you've set one.
 
-Add a product, remove one, or change how often you expect to buy it. For each product you can also
+Add a product or remove one. For each product you can also
 record what actually matters to you about it — not just a brand. For example:
 
 - For K-cups, the **variety** ("Donut Shop blend") might matter more than the brand — any brand works

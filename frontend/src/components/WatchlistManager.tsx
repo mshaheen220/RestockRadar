@@ -772,7 +772,6 @@ function ProductRow({ product, onChange }: { product: WatchlistProduct; onChange
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [displayName, setDisplayName] = useState(product.display_name);
-  const [statedRate, setStatedRate] = useState(product.stated_rate ?? '');
   const [unitLabel, setUnitLabel] = useState(product.unit_label ?? '');
   const [targetUnitPrice, setTargetUnitPrice] = useState(
     product.target_unit_price != null ? String(product.target_unit_price) : '',
@@ -790,7 +789,6 @@ function ProductRow({ product, onChange }: { product: WatchlistProduct; onChange
 
     await watchlistApi.update(product.id, {
       display_name: displayName,
-      stated_rate: statedRate || null,
       unit_label: unitLabel || null,
       target_unit_price: parsedTarget,
     });
@@ -834,18 +832,6 @@ function ProductRow({ product, onChange }: { product: WatchlistProduct; onChange
                   id={`name-${product.id}`}
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  className="rounded border border-brand-300 dark:border-brand-700 bg-white dark:bg-stone-950 px-2 py-1 text-sm"
-                />
-              </div>
-              <div>
-                <label htmlFor={`rate-${product.id}`} className="block text-xs text-stone-500 dark:text-stone-400">
-                  Stated rate
-                </label>
-                <input
-                  id={`rate-${product.id}`}
-                  value={statedRate}
-                  onChange={(e) => setStatedRate(e.target.value)}
-                  placeholder="4/week"
                   className="rounded border border-brand-300 dark:border-brand-700 bg-white dark:bg-stone-950 px-2 py-1 text-sm"
                 />
               </div>
@@ -894,14 +880,17 @@ function ProductRow({ product, onChange }: { product: WatchlistProduct; onChange
                 )}
               </h3>
               <p className="text-sm text-stone-500 dark:text-stone-400 truncate">
-                {product.stated_rate ?? 'No target rate set'}
-                {product.unit_label ? ` · unit: ${product.unit_label}` : ''}
-                {product.target_unit_price != null
-                  ? ` · good price: $${product.target_unit_price}/${product.unit_label ?? 'unit'}`
-                  : ''}
-                {' · '}
-                {product.criteria.length} criteria · {product.aliases.length} linked
-                {mainChoice ? ` · Main: ${mainChoice.label}` : ''}
+                {[
+                  product.unit_label ? `unit: ${product.unit_label}` : null,
+                  product.target_unit_price != null
+                    ? `good price: $${product.target_unit_price}/${product.unit_label ?? 'unit'}`
+                    : null,
+                  `${product.criteria.length} criteria`,
+                  `${product.aliases.length} linked`,
+                  mainChoice ? `Main: ${stripSiteSuffix(mainChoice.label)}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </p>
             </button>
           )}
@@ -954,7 +943,6 @@ function ProductRow({ product, onChange }: { product: WatchlistProduct; onChange
 
 function NewProductForm({ onCreated }: { onCreated: () => void }) {
   const [displayName, setDisplayName] = useState('');
-  const [statedRate, setStatedRate] = useState('');
   const [unitLabel, setUnitLabel] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -965,11 +953,9 @@ function NewProductForm({ onCreated }: { onCreated: () => void }) {
     try {
       await watchlistApi.create({
         display_name: displayName.trim(),
-        stated_rate: statedRate.trim() || null,
         unit_label: unitLabel.trim() || null,
       });
       setDisplayName('');
-      setStatedRate('');
       setUnitLabel('');
       setError(null);
       onCreated();
@@ -995,18 +981,6 @@ function NewProductForm({ onCreated }: { onCreated: () => void }) {
           placeholder="e.g. Dish soap"
           required
           className="w-48 rounded border border-brand-300 dark:border-brand-700 bg-white dark:bg-stone-950 px-2 py-1 text-sm"
-        />
-      </div>
-      <div>
-        <label htmlFor="new-product-rate" className="block text-xs text-stone-500 dark:text-stone-400">
-          Stated rate (optional)
-        </label>
-        <input
-          id="new-product-rate"
-          value={statedRate}
-          onChange={(e) => setStatedRate(e.target.value)}
-          placeholder="1/week"
-          className="w-32 rounded border border-brand-300 dark:border-brand-700 bg-white dark:bg-stone-950 px-2 py-1 text-sm"
         />
       </div>
       <div>

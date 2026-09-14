@@ -17,7 +17,7 @@ final class WatchlistRepository
     public function all(): array
     {
         $stmt = $this->pdo->query(
-            'SELECT id, display_name, stated_rate, unit_label, target_unit_price, active
+            'SELECT id, display_name, unit_label, target_unit_price, active
              FROM watchlist_products ORDER BY display_name ASC'
         );
         $products = $stmt->fetchAll();
@@ -34,7 +34,7 @@ final class WatchlistRepository
     public function find(int $id): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, display_name, stated_rate, unit_label, target_unit_price, active FROM watchlist_products WHERE id = :id'
+            'SELECT id, display_name, unit_label, target_unit_price, active FROM watchlist_products WHERE id = :id'
         );
         $stmt->execute(['id' => $id]);
         $product = $stmt->fetch();
@@ -50,14 +50,13 @@ final class WatchlistRepository
         return $product;
     }
 
-    public function create(string $displayName, ?string $statedRate, ?string $unitLabel): int
+    public function create(string $displayName, ?string $unitLabel): int
     {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO watchlist_products (display_name, stated_rate, unit_label) VALUES (:display_name, :stated_rate, :unit_label)'
+            'INSERT INTO watchlist_products (display_name, unit_label) VALUES (:display_name, :unit_label)'
         );
         $stmt->execute([
             'display_name' => $displayName,
-            'stated_rate' => $statedRate,
             'unit_label' => $unitLabel,
         ]);
 
@@ -66,7 +65,7 @@ final class WatchlistRepository
 
     public function update(int $id, array $fields): void
     {
-        $allowed = ['display_name', 'stated_rate', 'unit_label', 'target_unit_price', 'active'];
+        $allowed = ['display_name', 'unit_label', 'target_unit_price', 'active'];
         $sets = [];
         $params = ['id' => $id];
 

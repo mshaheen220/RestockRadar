@@ -44,7 +44,6 @@ export type Choice = {
 export type WatchlistProduct = {
   id: number;
   display_name: string;
-  stated_rate: string | null;
   unit_label: string | null;
   target_unit_price: number | null;
   active: number;
@@ -154,11 +153,11 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const watchlistApi = {
   list: () => request<WatchlistProduct[]>('/watchlist'),
-  create: (input: { display_name: string; stated_rate?: string | null; unit_label?: string | null }) =>
+  create: (input: { display_name: string; unit_label?: string | null }) =>
     request<WatchlistProduct>('/watchlist', { method: 'POST', body: JSON.stringify(input) }),
   update: (
     id: number,
-    fields: Partial<Pick<WatchlistProduct, 'display_name' | 'stated_rate' | 'unit_label' | 'target_unit_price' | 'active'>>,
+    fields: Partial<Pick<WatchlistProduct, 'display_name' | 'unit_label' | 'target_unit_price' | 'active'>>,
   ) =>
     request<WatchlistProduct>(`/watchlist/${id}`, { method: 'PATCH', body: JSON.stringify(fields) }),
   remove: (id: number) => request<{ deleted: number }>(`/watchlist/${id}`, { method: 'DELETE' }),

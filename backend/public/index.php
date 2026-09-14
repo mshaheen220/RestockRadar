@@ -7,7 +7,6 @@
  *   POST   /api/watchlist
  *   PATCH  /api/watchlist/{id}
  *   DELETE /api/watchlist/{id}
- *   GET    /api/watchlist/{id}/reorder-stats
  *   GET    /api/watchlist/{id}/price-stats
  *   GET    /api/deal-finder
  *   POST   /api/deals/detect
@@ -40,7 +39,6 @@ require __DIR__ . '/../vendor/autoload.php';
 use RestockRadar\Alerts\AlertRepository;
 use RestockRadar\Analysis\DealDetector;
 use RestockRadar\Analysis\PackQuantity;
-use RestockRadar\Analysis\ReorderAnalyzer;
 use RestockRadar\Matching\CoverageService;
 use RestockRadar\Matching\ProductMatcher;
 use RestockRadar\Preview\ProductPreviewFetcher;
@@ -100,7 +98,7 @@ if ($path === '/watchlist' && $method === 'POST') {
         respond(['error' => 'display_name is required'], 422);
     }
 
-    $id = $watchlistRepo->create($body['display_name'], $body['stated_rate'] ?? null, $body['unit_label'] ?? null);
+    $id = $watchlistRepo->create($body['display_name'], $body['unit_label'] ?? null);
     respond($watchlistRepo->find($id), 201);
 }
 
@@ -119,15 +117,6 @@ if (preg_match('#^/watchlist/(\d+)$#', $path, $m) && $method === 'DELETE') {
     $id = (int) $m[1];
     $watchlistRepo->delete($id);
     respond(['deleted' => $id]);
-}
-
-if (preg_match('#^/watchlist/(\d+)/reorder-stats$#', $path, $m) && $method === 'GET') {
-    $watchlistId = (int) $m[1];
-    $aliases = $watchlistRepo->aliasesFor($watchlistId);
-    $productNames = array_column($aliases, 'raw_product_name');
-
-    $analyzer = new ReorderAnalyzer($pdo);
-    respond($analyzer->computeForProductNames($productNames));
 }
 
 if (preg_match('#^/watchlist/(\d+)/price-stats$#', $path, $m) && $method === 'GET') {
