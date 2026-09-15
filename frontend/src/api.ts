@@ -27,6 +27,15 @@ export type MatchSuggestion = {
   missing_preferred: string[];
 };
 
+/** The reverse of MatchSuggestion — one raw name, ranked watchlist products it might belong to. */
+export type ProductSuggestion = {
+  watchlist_product_id: number;
+  display_name: string;
+  score: number;
+  matched_preferred: string[];
+  missing_preferred: string[];
+};
+
 export type Choice = {
   id: number;
   rank: number;
@@ -129,14 +138,6 @@ export type DealFinderProduct = {
   choices: DealFinderChoice[];
 };
 
-export type Alert = {
-  id: number;
-  kind: string;
-  message: string;
-  created_at: string;
-  display_name: string;
-};
-
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -191,11 +192,6 @@ export const watchlistApi = {
   priceStats: (id: number) => request<{ stats: PriceStats; choice_evaluations: ChoiceEvaluation[] }>(`/watchlist/${id}/price-stats`),
 };
 
-export const alertsApi = {
-  list: () => request<Alert[]>('/alerts'),
-  acknowledge: (id: number) => request<{ acknowledged: true }>(`/alerts/${id}/acknowledge`, { method: 'POST' }),
-};
-
 export const purchasesApi = {
   import: (csv: string) => request<{ read: number; inserted: number }>('/purchases/import', { method: 'POST', body: JSON.stringify({ csv }) }),
   addSingle: (input: {
@@ -211,11 +207,6 @@ export const purchasesApi = {
 };
 
 export const dealsApi = {
-  detect: () =>
-    request<{ products_checked: number; alerts_created: { alert_id: number; watchlist_product_id: number; display_name: string; message: string }[] }>(
-      '/deals/detect',
-      { method: 'POST' },
-    ),
   finder: () => request<DealFinderProduct[]>('/deal-finder'),
 };
 
@@ -238,6 +229,8 @@ export const coverageApi = {
     request<{ pack_quantity: number | null }>('/coverage/pack-quantity', { method: 'POST', body: JSON.stringify(input) }),
   correctTransaction: (input: { site_name: string; raw_product_name: string; quantity: number; unit_price: number }) =>
     request<{ corrected: true }>('/coverage/transaction', { method: 'POST', body: JSON.stringify(input) }),
+  suggest: (productName: string) =>
+    request<ProductSuggestion[]>(`/coverage/suggest?product_name=${encodeURIComponent(productName)}`),
 };
 
 export const sitesApi = {

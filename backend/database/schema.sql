@@ -155,16 +155,6 @@ CREATE TABLE IF NOT EXISTS price_observations (
     in_stock              INTEGER NOT NULL DEFAULT 1
 );
 
--- Stage 5: alerts surfaced to the dashboard/notifications
-CREATE TABLE IF NOT EXISTS alerts (
-    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-    watchlist_product_id  INTEGER NOT NULL REFERENCES watchlist_products(id) ON DELETE CASCADE,
-    kind                  TEXT NOT NULL,   -- 'deal', 'reorder_due', 'all_time_low'
-    message                TEXT NOT NULL,
-    created_at             TEXT NOT NULL DEFAULT (datetime('now')),
-    acknowledged            INTEGER NOT NULL DEFAULT 0
-);
-
 INSERT OR IGNORE INTO sites (name, has_live_fetch, notes) VALUES
     ('Walmart', 0, 'Order-history CSV export used for stage 3; bot protection blocks live fetch today.'),
     ('Amazon', 0, 'Order History.csv export used for stage 3; bot protection blocks live fetch today.'),

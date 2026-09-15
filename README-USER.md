@@ -1,13 +1,16 @@
 # RestockRadar
 
-RestockRadar keeps an eye on the groceries and household products you buy regularly, learns roughly
-how often you reorder each one from your past purchases, and shows you that on one dashboard.
+RestockRadar keeps an eye on the groceries and household products you buy regularly and helps you
+find genuinely good deals on them, using your own purchase history as the yardstick.
 
 ## What it does today
 
-- Shows a summary of your purchase history (how many transactions, over what date range, from how
-  many stores).
-- Lists any open alerts.
+- Has a **Deal Finder** tab: press Analyze to see, across your whole watchlist at once, every
+  captured store price ranked cheapest-first against your own purchase history — a report you can
+  re-run any time, telling you where to buy something today even if you're not out of it yet.
+- Has a **Purchases** tab for adding to your history yourself — either one quick item (a stop on
+  the way home, nothing else worth logging) or a full CSV of receipts at once — with a prompt right
+  there to link what you just added to a watchlist product.
 - Shows your watchlist — the products you've asked it to track, and what you told it matters about
   each one.
 - Lets you add, edit, or remove watchlist products yourself, any time you change your mind.
@@ -17,20 +20,13 @@ how often you reorder each one from your past purchases, and shows you that on o
 - Shows how much of your purchase history is actually organized, and lets you go the other direction —
   starting from an unlinked purchase and picking which watchlist product it belongs to (or telling it
   that item will never be a watchlist product).
-- Compares a price you've captured against your own purchase history (all-time low, recent average)
-  and can raise an alert when it's a genuinely good one — on demand, via a button on the Dashboard.
-- Has a **Deal Finder** tab: press Analyze to see, across your whole watchlist at once, every
-  captured store price ranked cheapest-first against your own purchase history — a report you can
-  re-run any time, not just a one-off alert.
-- Has a **Purchases** tab for adding to your history yourself — either one quick item (a stop on
-  the way home, nothing else worth logging) or a full CSV of receipts at once.
 
 ## What it doesn't do yet
 
 - It doesn't check live prices at stores yet — today it only learns from your past purchase history,
   plus whatever price you've captured yourself via the wand button or the browser extension.
-- Deal-checking has to be triggered manually (a button in the Dashboard) — nothing runs on a schedule
-  yet, since RestockRadar isn't deployed anywhere that's always on.
+- Deal-checking has to be triggered manually (the Analyze button in Deal Finder) — nothing runs on a
+  schedule yet, since RestockRadar isn't deployed anywhere that's always on.
 
 ## Managing your watchlist
 
@@ -104,11 +100,8 @@ Watchlist to see its **Price history**: the all-time low, your recent average, a
 paid, all per unit. Under that, each preferred product with a price gets a verdict against that
 history — an all-time-low, a real dip below your recent average, or just typical.
 
-To turn a "this is a deal" finding into something you actually see, go to the **Dashboard** and
-click **Check for deals** — it re-checks every product with a captured price against its history
-and adds a new alert for anything that qualifies. Alerts show up right there, with a dismiss button
-once you've seen them. Running it again won't repeat an alert you've already gotten for the exact
-same price — only a genuinely new price gets a new alert.
+To turn a "this is a deal" finding into something you actually see, open the **Deal Finder** tab
+and press **Analyze** — see the next section for how that works.
 
 **For sites that block that lookup** (Walmart included), there's a better option: the RestockRadar
 browser extension in the `extension/` folder. Install it once (see `extension/README.md` — it's a
@@ -123,13 +116,13 @@ The **Deal Finder** tab answers a different question than the per-product Price 
 not "is this one product's captured price good," but "across everything I track, where should I
 actually buy today, even if I'm not out of it yet." Press **Analyze** and it re-checks every
 captured store price against that product's own history and shows you the full picture — split
-into **Good deals right now** and **everything else** — every time you run it, not just what's new
-since last time (that's what Dashboard alerts are for).
+into **Good deals right now** and **everything else** — every time you run it, showing the current
+state, not just what's changed since last time.
 
 Two things worth knowing:
 - It only reports on products where you've captured at least one price via the wand or extension —
   it can't check live prices at stores itself. If a product's missing here, that's what the
-  Dashboard's **Price checks due** panel is for.
+  **Price checks due** panel at the top of this same tab is for.
 - A "stale" flag on a captured price means it might not reflect today's actual price — recapture
   it (wand or extension) before trusting a deal that's flagged that way.
 
@@ -169,8 +162,13 @@ recent_24mo`). It's always safe to import a file that overlaps with what's alrea
 history — anything already there is skipped, never double-counted, so re-importing a full export
 after adding a few new orders to it works fine.
 
-Either way, the new rows show up in **Coverage** like anything else — unmatched until you link them
-to a watchlist product (or ignore them), same as your original imported history.
+After a single add, you'll see a row of buttons right there — RestockRadar's best guesses for
+which watchlist product it belongs to, ranked most-likely first, plus a **Something else…**
+dropdown for anything not guessed and a **Not tracked** option for a one-off that'll never be a
+watchlist product. Link it right then, or leave it and it'll show up unmatched in **Coverage**
+later, same as anything from a bulk import — a full receipt always goes to Coverage for triage
+rather than prompting per-row, since a real receipt can have far too many new items to review one
+at a time.
 
 ## Checking your coverage
 
@@ -225,11 +223,8 @@ name pattern, select-all, and assign everything at once. "Unlink" and "Un-ignore
 items that are actually linked/ignored — applying them to a mixed selection just skips the items where
 they don't apply.
 
-## Using the dashboard
+## Using the app
 
-- **Price checks due**: lists any preferred product whose captured price is missing or 30+ days
-  old — a captured price never updates on its own, so this is the nudge to go recapture it (wand
-  or extension) before trusting a deal verdict built on it.
 - **Theme**: use the **Day / Night / System** switch in the top-right corner. "System" matches your
   device's light/dark setting automatically.
 - **Version number**: shown next to the RestockRadar title in the header, so you can tell which build

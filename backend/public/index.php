@@ -9,8 +9,6 @@
  *   DELETE /api/watchlist/{id}
  *   GET    /api/watchlist/{id}/price-stats
  *   GET    /api/deal-finder
- *   POST   /api/deals/detect
- *   POST   /api/alerts/{id}/acknowledge
  *   POST   /api/watchlist/{id}/criteria
  *   DELETE /api/watchlist/{id}/criteria/{criterionId}
  *   DELETE /api/watchlist/{id}/aliases/{aliasId}
@@ -28,17 +26,16 @@
  *   POST   /api/coverage/transaction     { site_name, raw_product_name, quantity, unit_price } — single-purchase items only
  *   GET    /api/sites
  *   GET    /api/product-preview?url=
- *   GET    /api/alerts
  *   GET    /api/transactions/summary
  *   POST   /api/purchases/import  { csv }  — bulk, same format as transaction_log.csv
  *   POST   /api/purchases         { site_name, product_name, quantity, unit_price, txn_date?, category? }
+ *   GET    /api/coverage/suggest?product_name=  — reverse match lookup, used by the Purchases tab
  */
 
 declare(strict_types=1);
 
 require __DIR__ . '/../vendor/autoload.php';
 
-use RestockRadar\Alerts\AlertRepository;
 use RestockRadar\Analysis\DealDetector;
 use RestockRadar\Analysis\PackQuantity;
 use RestockRadar\Import\TransactionImporter;
@@ -184,9 +181,9 @@ if (preg_match('#^/watchlist/(\d+)/price-stats$#', $path, $m) && $method === 'GE
 /**
  * Answers "where should I buy this, right now" across the whole watchlist in one pass — every
  * captured store price for every active product, cheapest first, judged against that product's
- * own purchase history. A report you re-run any time, not a notification log: unlike /deals/detect
- * (which only surfaces what's NEW since last check and dedupes on exact price), this always shows
- * the full current picture, including deals you already knew about.
+ * own purchase history. Always re-run fresh: no dedup, no notification log (that approach —
+ * /deals/detect + an alerts table — was removed once this existed, since it only ever surfaced
+ * what was NEW since the last check, where this always shows the full current picture).
  *
  * Ranking choices against each other only means something when their quantities are in the same
  * (or a convertible) unit — a case of 12 fl oz cans and a 2-liter bottle both just have "a
@@ -383,6 +380,22 @@ if (preg_match('#^/watchlist/(\d+)/match-suggestions/accept$#', $path, $m) && $m
     respond($watchlistRepo->find($watchlistId), 201);
 }
 
+/**
+ * The reverse direction of /watchlist/{id}/match-suggestions — one fresh raw name (typically
+ * just added via the Purchases tab), which watchlist products might it belong to. Reuses
+ * /watchlist/{id}/match-suggestions/accept (and CoverageService::ignore()) for the actual
+ * link/ignore action; this route only scores and ranks.
+ */
+if ($path === '/coverage/suggest' && $method === 'GET') {
+    $productName = isset($_GET['product_name']) ? trim((string) $_GET['product_name']) : '';
+    if ($productName === '') {
+        respond(['error' => 'product_name is required'], 422);
+    }
+
+    $matcher = new ProductMatcher($pdo);
+    respond($matcher->suggestProductsFor($productName, $watchlistRepo->all()));
+}
+
 if (preg_match('#^/watchlist/(\d+)/match-suggestions/reject$#', $path, $m) && $method === 'POST') {
     $watchlistId = (int) $m[1];
     $body = jsonBody();
@@ -544,57 +557,6 @@ if ($path === '/product-preview' && $method === 'GET') {
     } catch (\RuntimeException $e) {
         respond(['error' => $e->getMessage()], 502);
     }
-}
-
-if ($path === '/alerts' && $method === 'GET') {
-    $repo = new AlertRepository($pdo);
-    respond($repo->unacknowledged());
-}
-
-if (preg_match('#^/alerts/(\d+)/acknowledge$#', $path, $m) && $method === 'POST') {
-    (new AlertRepository($pdo))->acknowledge((int) $m[1]);
-    respond(['acknowledged' => true]);
-}
-
-if ($path === '/deals/detect' && $method === 'POST') {
-    $detector = new DealDetector($pdo);
-    $alertRepo = new AlertRepository($pdo);
-
-    $checked = 0;
-    $created = [];
-
-    foreach ($watchlistRepo->all() as $product) {
-        if (!$product['active'] || $product['choices'] === []) {
-            continue;
-        }
-
-        $aliases = $watchlistRepo->aliasesFor((int) $product['id']);
-        $productNames = array_column($aliases, 'raw_product_name');
-        $stats = $detector->historicalStats($productNames);
-        $checked++;
-
-        foreach ($product['choices'] as $choice) {
-            if ($choice['price'] === null || $choice['quantity'] === null || (float) $choice['quantity'] === 0.0) {
-                continue;
-            }
-
-            $unitPrice = $choice['price'] / $choice['quantity'];
-            $result = $detector->evaluate($unitPrice, $stats);
-
-            if ($result['message'] === null) {
-                continue;
-            }
-
-            if ($alertRepo->existsWithMessage((int) $product['id'], $result['message'])) {
-                continue;
-            }
-
-            $alertId = $alertRepo->create((int) $product['id'], $result['verdict'], $result['message']);
-            $created[] = ['alert_id' => $alertId, 'watchlist_product_id' => $product['id'], 'display_name' => $product['display_name'], 'message' => $result['message']];
-        }
-    }
-
-    respond(['products_checked' => $checked, 'alerts_created' => $created]);
 }
 
 if ($path === '/transactions/summary' && $method === 'GET') {

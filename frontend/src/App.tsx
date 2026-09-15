@@ -1,17 +1,15 @@
 import { useState } from 'react';
 import { Radar } from 'lucide-react';
 import CoverageView from './components/CoverageView';
-import Dashboard from './components/Dashboard';
 import DealFinder from './components/DealFinder';
 import Purchases from './components/Purchases';
 import ThemeSwitcher from './components/ThemeSwitcher';
 import VersionBadge from './components/VersionBadge';
 import WatchlistManager from './components/WatchlistManager';
 
-type Tab = 'dashboard' | 'deal-finder' | 'manage' | 'purchases' | 'coverage';
+type Tab = 'deal-finder' | 'manage' | 'purchases' | 'coverage';
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'dashboard', label: 'Dashboard' },
   { id: 'deal-finder', label: 'Deal Finder' },
   { id: 'manage', label: 'Manage Watchlist' },
   { id: 'purchases', label: 'Purchases' },
@@ -19,7 +17,7 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>('dashboard');
+  const [tab, setTab] = useState<Tab>('deal-finder');
 
   return (
     <div className="min-h-screen">
@@ -52,7 +50,6 @@ export default function App() {
         <ThemeSwitcher />
       </header>
       <main className="p-4 sm:p-6">
-        {tab === 'dashboard' && <Dashboard />}
         {tab === 'deal-finder' && <DealFinder />}
         {tab === 'manage' && <WatchlistManager />}
         {tab === 'purchases' && <Purchases />}

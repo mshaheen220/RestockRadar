@@ -51,51 +51,14 @@ final class ProductMatcher
         $candidates = $stmt->fetchAll();
 
         $displayTokens = $this->tokenize($watchlistProduct['display_name']);
-        $mustMatch = [];
-        $preferred = [];
-
-        foreach ($watchlistProduct['criteria'] as $criterion) {
-            if ($criterion['importance'] === 'must_match') {
-                $mustMatch[] = $criterion['attribute_value'];
-            } elseif ($criterion['importance'] === 'preferred') {
-                $preferred[] = $criterion['attribute_value'];
-            }
-            // 'flexible' criteria are intentionally not used for matching.
-        }
-
         $scored = [];
 
         foreach ($candidates as $candidate) {
             $normalizedName = $this->normalize($candidate['product_name']);
-
-            $disqualified = false;
-            foreach ($mustMatch as $required) {
-                if (!str_contains($normalizedName, $this->normalize($required))) {
-                    $disqualified = true;
-                    break;
-                }
-            }
-            if ($disqualified) {
-                continue;
-            }
-
             $candidateTokens = $this->tokenize($candidate['product_name']);
-            $baseScore = $this->jaccard($displayTokens, $candidateTokens);
 
-            $matchedPreferred = [];
-            $missingPreferred = [];
-            foreach ($preferred as $value) {
-                if (str_contains($normalizedName, $this->normalize($value))) {
-                    $matchedPreferred[] = $value;
-                } else {
-                    $missingPreferred[] = $value;
-                }
-            }
-
-            $preferredRatio = $preferred === [] ? 0.0 : count($matchedPreferred) / count($preferred);
-            $score = $preferred === [] ? $baseScore : (0.4 * $baseScore + 0.6 * $preferredRatio);
-
-            if ($score < $minScore) {
+            $result = $this->scoreCandidate($watchlistProduct['criteria'], $displayTokens, $normalizedName, $candidateTokens);
+            if ($result === null || $result['score'] < $minScore) {
                 continue;
             }
 
@@ -104,15 +67,91 @@ final class ProductMatcher
                 'site_name' => $candidate['site_name'],
                 'raw_product_name' => $candidate['product_name'],
                 'transaction_count' => (int) $candidate['transaction_count'],
-                'score' => round($score, 3),
-                'matched_preferred' => $matchedPreferred,
-                'missing_preferred' => $missingPreferred,
-            ];
+            ] + $result;
         }
 
         usort($scored, fn ($a, $b) => $b['score'] <=> $a['score'] ?: $b['transaction_count'] <=> $a['transaction_count']);
 
         return array_slice($scored, 0, $limit);
+    }
+
+    /**
+     * The other direction: "which watchlist products might THIS one raw name belong to" — used
+     * right after adding a purchase (Purchases tab), where there's one fresh, unlinked name and
+     * the question is which (if any) of the whole watchlist it matches, rather than
+     * suggestMatches()'s "for this one watchlist product, which purchase-history names fit."
+     * Same scoring, just iterated the other way around.
+     *
+     * @param array<int, array{id: int, display_name: string, criteria: array}> $watchlistProducts
+     * @return array<int, array{watchlist_product_id: int, display_name: string, score: float,
+     *               matched_preferred: string[], missing_preferred: string[]}>
+     */
+    public function suggestProductsFor(string $productName, array $watchlistProducts, int $limit = 5, float $minScore = 0.05): array
+    {
+        $normalizedName = $this->normalize($productName);
+        $candidateTokens = $this->tokenize($productName);
+
+        $scored = [];
+
+        foreach ($watchlistProducts as $product) {
+            $displayTokens = $this->tokenize($product['display_name']);
+            $result = $this->scoreCandidate($product['criteria'], $displayTokens, $normalizedName, $candidateTokens);
+            if ($result === null || $result['score'] < $minScore) {
+                continue;
+            }
+
+            $scored[] = [
+                'watchlist_product_id' => (int) $product['id'],
+                'display_name' => $product['display_name'],
+            ] + $result;
+        }
+
+        usort($scored, fn ($a, $b) => $b['score'] <=> $a['score']);
+
+        return array_slice($scored, 0, $limit);
+    }
+
+    /**
+     * Shared scoring core for both directions above. Null return means a `must_match` criterion
+     * is missing from the candidate name — an outright disqualification, not just a low score.
+     *
+     * @return array{score: float, matched_preferred: string[], missing_preferred: string[]}|null
+     */
+    private function scoreCandidate(array $criteria, array $displayTokens, string $normalizedCandidateName, array $candidateTokens): ?array
+    {
+        $mustMatch = [];
+        $preferred = [];
+        foreach ($criteria as $criterion) {
+            if ($criterion['importance'] === 'must_match') {
+                $mustMatch[] = $criterion['attribute_value'];
+            } elseif ($criterion['importance'] === 'preferred') {
+                $preferred[] = $criterion['attribute_value'];
+            }
+            // 'flexible' criteria are intentionally not used for matching.
+        }
+
+        foreach ($mustMatch as $required) {
+            if (!str_contains($normalizedCandidateName, $this->normalize($required))) {
+                return null;
+            }
+        }
+
+        $baseScore = $this->jaccard($displayTokens, $candidateTokens);
+
+        $matchedPreferred = [];
+        $missingPreferred = [];
+        foreach ($preferred as $value) {
+            if (str_contains($normalizedCandidateName, $this->normalize($value))) {
+                $matchedPreferred[] = $value;
+            } else {
+                $missingPreferred[] = $value;
+            }
+        }
+
+        $preferredRatio = $preferred === [] ? 0.0 : count($matchedPreferred) / count($preferred);
+        $score = $preferred === [] ? $baseScore : (0.4 * $baseScore + 0.6 * $preferredRatio);
+
+        return ['score' => round($score, 3), 'matched_preferred' => $matchedPreferred, 'missing_preferred' => $missingPreferred];
     }
 
     private function normalize(string $value): string

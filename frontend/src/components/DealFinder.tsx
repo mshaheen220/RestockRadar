@@ -1,11 +1,59 @@
 import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { dealsApi, type DealFinderChoice, type DealFinderProduct } from '../api';
-import { daysSince, formatMoney, isStalePrice, stripSiteSuffix, verdictBadgeClass, verdictLabel } from '../priceUtils';
+import { dealsApi, watchlistApi, type DealFinderChoice, type DealFinderProduct, type WatchlistProduct } from '../api';
+import { daysSince, formatMoney, isStalePrice, STALE_PRICE_DAYS, stripSiteSuffix, verdictBadgeClass, verdictLabel } from '../priceUtils';
 import RankBadge from './RankBadge';
 import SiteIcon from './SiteIcon';
 
 const ACTIONABLE = new Set(['good_deal', 'all_time_low']);
+
+/**
+ * A captured price is a one-time snapshot (wand/extension), not a live check — it goes stale
+ * silently, so a "good deal" verdict below could be built on a price from months ago. This is a
+ * nudge, not an automated recheck: re-capturing still has to happen via the wand button or the
+ * extension. Lives here (not a standalone Dashboard) since staleness is specifically about
+ * whether THIS tab's verdicts can be trusted.
+ */
+function PriceFreshnessPanel({ watchlist }: { watchlist: WatchlistProduct[] | null }) {
+  const dueForRecheck = (watchlist ?? []).flatMap((product) =>
+    product.choices
+      .filter((choice) => choice.price == null || isStalePrice(choice.price_captured_at))
+      .map((choice) => ({ product, choice })),
+  );
+
+  return (
+    <section aria-labelledby="price-freshness-heading" className="rounded-xl border border-brand-200 dark:border-brand-800 bg-white dark:bg-stone-900 p-4">
+      <h2 id="price-freshness-heading" className="font-semibold mb-2">
+        Price checks due
+      </h2>
+
+      {watchlist === null && <p className="text-sm text-stone-500 dark:text-stone-400">Loading…</p>}
+      {watchlist && dueForRecheck.length === 0 && (
+        <p className="text-sm text-stone-500 dark:text-stone-400">All captured prices are fresh.</p>
+      )}
+      {dueForRecheck.length > 0 && (
+        <ul className="text-sm space-y-1">
+          {dueForRecheck.map(({ product, choice }) => (
+            <li key={`${product.id}-${choice.rank}`} className="flex items-center justify-between gap-2">
+              <span>
+                <span className="font-medium">{product.display_name}</span>
+                <span className="text-stone-500 dark:text-stone-400"> — {stripSiteSuffix(choice.label)}</span>
+              </span>
+              <span className="shrink-0 text-xs text-stone-500 dark:text-stone-400">
+                {choice.price == null ? 'never captured' : `captured ${daysSince(choice.price_captured_at as string)}d ago`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <p className="mt-2 text-xs text-stone-400 dark:text-stone-500">
+        Recheck via the wand button or the browser extension — a captured price older than {STALE_PRICE_DAYS}{' '}
+        days doesn't refresh on its own.
+      </p>
+    </section>
+  );
+}
 
 function ChoiceRow({ choice, unitLabel, isBest }: { choice: DealFinderChoice; unitLabel: string | null; isBest: boolean }) {
   const stale = isStalePrice(choice.price_captured_at);
@@ -108,14 +156,16 @@ function ProductGroup({
 
 /**
  * Answers "where should I buy this, right now" across the whole watchlist — a report you
- * re-run any time, not a notification log (that's /deals/detect + the Dashboard's Alerts panel,
- * which only surfaces what's NEW and dedupes on exact price). This always shows the current
- * picture using whatever prices you've most recently captured via the wand button or the
+ * re-run any time, not a notification log (an earlier /deals/detect + Dashboard Alerts panel did
+ * that — only surfacing what was NEW and deduping on exact price — and was removed once this
+ * existed, since this always shows the full current picture instead). This always shows the
+ * current picture using whatever prices you've most recently captured via the wand button or the
  * extension — the "stale" flag on a choice is a reminder that a "deal" is only as current as
  * the last time you checked it.
  */
 export default function DealFinder() {
   const [report, setReport] = useState<DealFinderProduct[] | null>(null);
+  const [watchlist, setWatchlist] = useState<WatchlistProduct[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [lastRun, setLastRun] = useState<Date | null>(null);
@@ -136,6 +186,7 @@ export default function DealFinder() {
 
   useEffect(() => {
     analyze();
+    watchlistApi.list().then(setWatchlist).catch(() => {});
   }, []);
 
   const deals = (report ?? []).filter((p) => ACTIONABLE.has(p.choices[0].verdict));
@@ -167,6 +218,8 @@ export default function DealFinder() {
         )}
         {error && <p className="text-red-600 text-sm mt-2">Couldn't load the report: {error}</p>}
       </section>
+
+      <PriceFreshnessPanel watchlist={watchlist} />
 
       <ProductGroup
         title="Good deals right now"

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Upload } from 'lucide-react';
-import { purchasesApi, sitesApi, type Site } from '../api';
+import { Check, EyeOff, Link2, Plus, Upload } from 'lucide-react';
+import { coverageApi, purchasesApi, sitesApi, watchlistApi, type ProductSuggestion, type Site, type WatchlistProduct } from '../api';
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -9,13 +9,122 @@ function todayIso(): string {
 type AddedItem = { key: string; productName: string; siteName: string; total: number };
 
 /**
+ * A purchase you just added is unlinked, same as anything from a CSV import — Deal Finder can't
+ * use it until it's tied to a watchlist product. Without this, closing that loop means a
+ * separate trip to Coverage for every single add, which defeats the point of a "quick" add.
+ * Ranks suggestions via the same scoring ProductMatcher already uses (just the reverse direction:
+ * one fresh name against every watchlist product, not one product against every fresh name).
+ */
+function LinkSuggestion({ item, products }: { item: AddedItem; products: WatchlistProduct[] }) {
+  const [suggestions, setSuggestions] = useState<ProductSuggestion[] | null>(null);
+  const [manualId, setManualId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<'linked' | 'ignored' | null>(null);
+
+  useEffect(() => {
+    coverageApi
+      .suggest(item.productName)
+      .then(setSuggestions)
+      .catch(() => setSuggestions([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const link = async (watchlistProductId: number) => {
+    setBusy(true);
+    try {
+      await watchlistApi.acceptSuggestion(watchlistProductId, { site_name: item.siteName, raw_product_name: item.productName });
+      setStatus('linked');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const ignore = async () => {
+    setBusy(true);
+    try {
+      await coverageApi.ignore({ site_name: item.siteName, raw_product_name: item.productName });
+      setStatus('ignored');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (status === 'linked') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-brand-600 dark:text-brand-400">
+        <Check size={12} /> Linked
+      </span>
+    );
+  }
+  if (status === 'ignored') {
+    return <span className="text-xs text-stone-400 dark:text-stone-500">Ignored — won't ask again</span>;
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+      {suggestions === null && <span className="text-xs text-stone-400 dark:text-stone-500">Checking watchlist…</span>}
+      {suggestions?.map((s) => (
+        <button
+          key={s.watchlist_product_id}
+          type="button"
+          onClick={() => link(s.watchlist_product_id)}
+          disabled={busy}
+          title={`${Math.round(s.score * 100)}% match`}
+          className="inline-flex items-center gap-1 text-xs rounded-full border border-brand-300 dark:border-brand-700 px-2 py-0.5 text-brand-700 dark:text-brand-300 hover:bg-brand-100 dark:hover:bg-brand-800/40 disabled:opacity-40"
+        >
+          <Link2 size={11} /> {s.display_name}
+        </button>
+      ))}
+      {suggestions !== null && (
+        <>
+          <select
+            value={manualId}
+            onChange={(e) => setManualId(e.target.value)}
+            aria-label={`Assign ${item.productName} to a watchlist product`}
+            className="text-xs rounded border border-brand-300 dark:border-brand-700 bg-white dark:bg-stone-950 px-1 py-0.5 max-w-[8rem]"
+          >
+            <option value="">Something else…</option>
+            {products.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.display_name}
+              </option>
+            ))}
+          </select>
+          {manualId && (
+            <button
+              type="button"
+              onClick={() => link(Number(manualId))}
+              disabled={busy}
+              aria-label={`Link ${item.productName}`}
+              title="Link to selected product"
+              className="p-1 rounded text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-800/40 disabled:opacity-40"
+            >
+              <Link2 size={13} />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={ignore}
+            disabled={busy}
+            title="Never a watchlist item — don't ask again"
+            className="inline-flex items-center gap-1 text-xs text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300"
+          >
+            <EyeOff size={11} /> Not tracked
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
  * "I bought one thing, there's no receipt" — the common case for a quick stop on the way home.
  * Site and date persist across submissions (most likely still true for the next item from the
  * same trip); product/quantity/price clear so the next add starts fresh. A running list of what
  * was just added is the only feedback — there's no separate transaction-review UI, so without
  * this a person has no way to tell an add actually landed.
  */
-function SinglePurchaseForm({ sites, onAdded }: { sites: Site[]; onAdded: () => void }) {
+function SinglePurchaseForm({ sites, products, onAdded }: { sites: Site[]; products: WatchlistProduct[]; onAdded: () => void }) {
   const [siteName, setSiteName] = useState('');
   const [txnDate, setTxnDate] = useState(todayIso());
   const [productName, setProductName] = useState('');
@@ -230,11 +339,14 @@ function SinglePurchaseForm({ sites, onAdded }: { sites: Site[]; onAdded: () => 
       {error && <p className="text-red-600 text-sm mt-2">{error}</p>}
 
       {added.length > 0 && (
-        <ul className="mt-3 space-y-1 text-sm text-stone-500 dark:text-stone-400">
+        <ul className="mt-3 space-y-2 text-sm">
           {added.map((item) => (
-            <li key={item.key}>
-              Added <span className="text-stone-700 dark:text-stone-300">{item.productName}</span> ({item.siteName}) —{' '}
-              ${item.total.toFixed(2)}
+            <li key={item.key} className="border-t border-stone-100 dark:border-stone-800 pt-2 first:border-0 first:pt-0">
+              <p className="text-stone-500 dark:text-stone-400">
+                Added <span className="text-stone-700 dark:text-stone-300">{item.productName}</span> ({item.siteName}) —{' '}
+                ${item.total.toFixed(2)}
+              </p>
+              <LinkSuggestion item={item} products={products} />
             </li>
           ))}
         </ul>
@@ -355,16 +467,23 @@ function ImportForm({ onImported }: { onImported: () => void }) {
 
 export default function Purchases() {
   const [sites, setSites] = useState<Site[]>([]);
+  const [products, setProducts] = useState<WatchlistProduct[]>([]);
 
   const loadSites = () => {
     sitesApi.list().then(setSites).catch(() => {});
   };
+  const loadProducts = () => {
+    watchlistApi.list().then(setProducts).catch(() => {});
+  };
 
-  useEffect(loadSites, []);
+  useEffect(() => {
+    loadSites();
+    loadProducts();
+  }, []);
 
   return (
     <div className="space-y-4 max-w-3xl">
-      <SinglePurchaseForm sites={sites} onAdded={loadSites} />
+      <SinglePurchaseForm sites={sites} products={products} onAdded={loadSites} />
       <ImportForm onImported={loadSites} />
     </div>
   );

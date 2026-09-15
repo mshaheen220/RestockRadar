@@ -140,31 +140,38 @@ Five-stage pipeline, single direction:
    actually be ranked together. **Known, disclosed gap**: this unit-awareness covers choices and
    transactions independently; it does not attempt cross-product unit reconciliation beyond what
    `historicalStats`'s `$targetUnit` already does.
-   `POST /deals/detect` runs `evaluate()` across every active product with at least one priced choice
-   and inserts a row into `alerts` for each qualifying verdict, deduped by exact message text
-   (`AlertRepository::existsWithMessage()`) so repeat runs don't spam identical findings — verified
-   live: creates on first run, empty on a second run with no change, and an acknowledge clears it
-   from `/alerts` immediately. `GET /deal-finder` is the other consumer of the same evaluation logic,
-   but as a full report instead of a notification log: every active product with at least one priced
-   choice, choices sorted cheapest-first (comparable ones before non-comparable ones), re-computed
-   fresh on every call rather than dedup/diffed against a prior run — `frontend/src/components/DealFinder.tsx`
+   `GET /deal-finder` runs `evaluate()` across every active product with at least one priced choice
+   and returns a full report — every choice, sorted cheapest-first (comparable ones before
+   non-comparable ones) — re-computed fresh on every call. `frontend/src/components/DealFinder.tsx`
    groups the result into "Good deals right now" (`good_deal`/`all_time_low`) vs. everything else,
-   and flags any choice whose `price_captured_at` is 30+ days stale (`priceUtils.ts`'s `isStalePrice`).
-5. **Alerts & dashboard** — `backend/src/Alerts` (API) + `frontend/` (React + TS + Tailwind dashboard).
-   The Dashboard's Alerts panel has a "Check for deals" button (`POST /deals/detect`) and a dismiss
-   action per alert (`POST /alerts/{id}/acknowledge`) — until this, `alerts` existed in the schema from
-   the very first commit but nothing had ever written to it. The Dashboard also has a "Price checks
-   due" panel (`PriceFreshnessPanel` in `Dashboard.tsx`) computed purely client-side from data the
-   Dashboard already loads — no backend endpoint needed — listing any choice with no captured price
-   or one 30+ days old.
+   and flags any choice whose `price_captured_at` is 30+ days stale (`priceUtils.ts`'s `isStalePrice`,
+   surfaced via a `PriceFreshnessPanel` at the top of the same tab). An earlier `POST /deals/detect` +
+   `alerts` table + `AlertRepository` implemented this as a dedup'd notification log instead (an
+   alert per qualifying verdict, deduped by exact message text, with an acknowledge/dismiss action)
+   — removed entirely once Deal Finder existed, since a full-picture report strictly supersedes a
+   "what's new since last check" log for this use case; the `alerts` table had zero real rows in it
+   at removal time.
+5. **Coverage & closing the loop** — `backend/src/Matching/CoverageService.php` (every distinct
+   purchase-history item, its status — linked/unmatched/ignored — filterable by status/site/search
+   via `/coverage/items`) works alongside `ProductMatcher::suggestProductsFor()` — the reverse of
+   `suggestMatches()`: one fresh raw name (typically just added via the **Purchases** tab) scored
+   against every watchlist product, not one watchlist product scored against every raw name. Both
+   directions share a `scoreCandidate()` core so the scoring logic can't drift between them.
+   `GET /coverage/suggest?product_name=` exposes the reverse direction; `frontend/src/components/
+   Purchases.tsx`'s `LinkSuggestion` calls it right after a single-purchase add and renders the
+   ranked results as one-click "link to X" buttons (falling back to a plain dropdown of every
+   product, plus an "ignore" action) — closing the loop between adding a purchase and it actually
+   feeding Deal Finder's history, without a separate trip to Coverage for every add. A bulk CSV
+   import deliberately does NOT get this per-row prompt (too many new rows at once); those still
+   land in Coverage for triage, same as the original seed import.
 
 ## Status
 
 - Stages 1, 3, 4, 5 scaffolded: watchlist CRUD (with a "what matters" criteria editor — see
   `frontend/src/components/WatchlistManager.tsx`), SQLite schema + CSV import,
   deal detection against real purchase history, fuzzy match suggestions (accept/reject review UI, same
-  component), a minimal JSON API, and a dashboard UI (summary stats, a now-functional alerts list,
-  watchlist table).
+  component), and a minimal JSON API. No standalone dashboard/overview page exists — Deal Finder
+  (with its Price Freshness panel) is the landing tab.
 - Fuzzy matching is a *suggestion* layer only — accepting a suggestion writes a normal row into
   `product_aliases`, same as manual aliasing. A rejected suggestion is remembered
   (`watchlist_product_rejected_matches`) so it won't resurface for that product. Brand-only criteria can
@@ -177,8 +184,6 @@ Five-stage pipeline, single direction:
   matching failed.
 - Stage 2 (live site fetchers) is **intentionally deferred** — no live fetcher exists for any site yet.
   `backend/src/Fetchers/SiteFetcher.php` documents the contract future fetchers should implement.
-- Deal/all-time-low detection and actually populating `alerts` automatically are not built yet — the
-  `alerts` table and API exist, but nothing writes to it on its own yet.
 
 ## Data privacy
 
@@ -249,10 +254,10 @@ backend/            PHP API + analysis (stages 1, 3, 4, 5)
   src/Storage/       PDO/SQLite connection
   src/Import/        stage 3 — TransactionImporter (CSV bulk + single-purchase add)
   src/Analysis/      stage 4 — deal detection (PackQuantity, DealDetector)
-  src/Alerts/         stage 5 — alerts API
+  src/Matching/      stages 4/5 — ProductMatcher, CoverageService
   database/          schema.sql + generated .sqlite (gitignored)
   scripts/           CSV import
-frontend/            React + TypeScript + Tailwind dashboard
+frontend/            React + TypeScript + Tailwind UI
 sample-data/         synthetic CSV, safe to commit
 transaction_log.csv  real data, gitignored, lives at repo root locally
 ```
