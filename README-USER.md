@@ -21,13 +21,17 @@ find genuinely good deals on them, using your own purchase history as the yardst
   starting from an unlinked purchase and picking which watchlist product it belongs to (or telling it
   that item will never be a watchlist product).
 - Requires signing in, with three levels of access — see **Accounts and access** below.
+- Can check a **live Walmart price** on demand — a refresh button next to any Walmart preferred
+  product goes and gets the current price right now, instead of waiting for you to capture it
+  yourself. See **Checking a Walmart price right now** below.
 
 ## What it doesn't do yet
 
-- It doesn't check live prices at stores yet — today it only learns from your past purchase history,
-  plus whatever price you've captured yourself via the wand button or the browser extension.
-- Deal-checking has to be triggered manually (the Analyze button in Deal Finder) — nothing runs on a
-  schedule yet, since RestockRadar isn't deployed anywhere that's always on.
+- Live price-checking only works for Walmart so far — every other site still relies on you
+  capturing a price yourself via the wand button or the browser extension.
+- Deal-checking has to be triggered manually (the Analyze button in Deal Finder, or the Walmart
+  refresh button) — nothing runs on a schedule yet, since RestockRadar isn't deployed anywhere
+  that's always on.
 
 ## Managing your watchlist
 
@@ -110,6 +114,16 @@ few clicks in Chrome's extension settings, not published to the store), then whe
 product page on any site, click the extension icon and it grabs the name/thumbnail right from the
 page you're already looking at — since it's your own browser viewing the page normally, sites can't
 tell it apart from you just browsing, so it works even where the one-time lookup above doesn't.
+
+### Checking a Walmart price right now, without opening the page
+
+For a Walmart preferred product, there's a small refresh icon next to its price — click it and
+RestockRadar goes and checks the current price on walmart.com itself, right then, without you
+having to visit that product's page. This needs a one-time setup: open the extension on any
+walmart.com page you're signed into and click **Capture Walmart session** (under "Live price
+sessions") — see `extension/README.md`. Recapture it whenever the refresh button comes back with
+an error saying the session's expired. This only works for Walmart today; other sites don't have
+this yet.
 
 ### Finding today's deals across your whole watchlist
 

@@ -9,6 +9,7 @@ import {
   Plus,
   Power,
   PowerOff,
+  RefreshCw,
   Search,
   Trash2,
   Wand2,
@@ -556,14 +557,39 @@ function unitPriceInfo(choice: Choice, product: WatchlistProduct) {
   });
 }
 
+/** Only Walmart has a live fetcher today (WalmartFetcher) — detected from the URL's own host, same as the backend route does. */
+function isLiveRefreshable(choice: Choice): boolean {
+  if (!choice.url) return false;
+  try {
+    return new URL(choice.url).hostname.toLowerCase().endsWith('walmart.com');
+  } catch {
+    return false;
+  }
+}
+
 function PreferredProducts({ product, onChange }: { product: WatchlistProduct; onChange: () => void }) {
   const { canWrite } = useAuth();
   const [editingRank, setEditingRank] = useState<number | null>(null);
+  const [refreshingRank, setRefreshingRank] = useState<number | null>(null);
+  const [refreshError, setRefreshError] = useState<{ rank: number; message: string } | null>(null);
   const byRank = new Map(product.choices.map((c) => [c.rank, c]));
 
   const remove = async (rank: number) => {
     await watchlistApi.removeChoice(product.id, rank);
     onChange();
+  };
+
+  const refreshPrice = async (rank: number) => {
+    setRefreshingRank(rank);
+    setRefreshError(null);
+    try {
+      await watchlistApi.refreshChoicePrice(product.id, rank);
+      onChange();
+    } catch (err) {
+      setRefreshError({ rank, message: err instanceof Error ? err.message : 'Failed to refresh price' });
+    } finally {
+      setRefreshingRank(null);
+    }
   };
 
   return (
@@ -632,6 +658,11 @@ function PreferredProducts({ product, onChange }: { product: WatchlistProduct; o
                         stale · {daysSince(choice.price_captured_at as string)}d
                       </span>
                     )}
+                    {refreshError?.rank === rank && (
+                      <span className="ml-1.5 text-xs text-red-600 dark:text-red-400" title={refreshError.message}>
+                        {refreshError.message}
+                      </span>
+                    )}
                     {(() => {
                       const unitInfo = unitPriceInfo(choice, product);
                       if (!unitInfo) return null;
@@ -660,6 +691,18 @@ function PreferredProducts({ product, onChange }: { product: WatchlistProduct; o
                     >
                       <ExternalLink size={14} />
                     </a>
+                  )}
+                  {canWrite && isLiveRefreshable(choice) && (
+                    <button
+                      type="button"
+                      onClick={() => refreshPrice(rank)}
+                      disabled={refreshingRank === rank}
+                      aria-label={`Check current Walmart price for ${choice.label}`}
+                      title="Check current price on Walmart, right now"
+                      className="shrink-0 p-1 rounded text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-800/40 disabled:opacity-50"
+                    >
+                      <RefreshCw size={14} className={refreshingRank === rank ? 'animate-spin' : undefined} />
+                    </button>
                   )}
                   {canWrite && (
                     <>

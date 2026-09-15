@@ -3,9 +3,11 @@
 namespace RestockRadar\Fetchers;
 
 /**
- * Stage 2 contract: not implemented yet for any site (see PROJECT-BRIEF.md "Data sources — status").
- * Each future fetcher (Walmart, Amazon, Costco, ...) implements this against a reverse-engineered
- * API where possible, falling back to an authenticated cookie-persisted session otherwise.
+ * Stage 2 contract. First implementation: WalmartFetcher. Each fetcher takes a product page URL
+ * (from watchlist_product_choices.url) plus a session cookie captured from the user's own
+ * logged-in browser (see SiteSessionRepository) — every tracked site's product pages are
+ * confirmed bot-walled for a plain anonymous request, so cookie-persisted auth is the default
+ * approach for every fetcher here, not just Walmart's.
  */
 interface SiteFetcher
 {
@@ -13,8 +15,8 @@ interface SiteFetcher
     public function siteName(): string;
 
     /**
-     * @param string $rawProductId Site-specific item id/ASIN/SKU
-     * @return array{price: float, shipping_charge: float, in_stock: bool}
+     * @return array{title: ?string, image: ?string, price: ?float, currency: ?string, quantity: ?float, quantity_unit: ?string}
+     * @throws \RuntimeException if the page couldn't be reached, came back as a bot challenge, or had no price on it
      */
-    public function fetchPrice(string $rawProductId): array;
+    public function fetchPrice(string $url, string $cookieHeader): array;
 }

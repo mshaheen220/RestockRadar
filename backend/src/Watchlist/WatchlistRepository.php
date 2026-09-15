@@ -205,6 +205,21 @@ final class WatchlistRepository
         return $stmt->fetchAll();
     }
 
+    /** One choice by its slot, or null if that slot is empty — e.g. to look up its url/site_label before refreshing its price. */
+    public function findChoice(int $watchlistProductId, int $rank): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, rank, label, site_label AS site_name, url, image_url, price, price_currency, price_captured_at, quantity, quantity_unit
+             FROM watchlist_product_choices
+             WHERE watchlist_product_id = :wp_id AND rank = :rank'
+        );
+        $stmt->execute(['wp_id' => $watchlistProductId, 'rank' => $rank]);
+
+        $row = $stmt->fetch();
+
+        return $row ?: null;
+    }
+
     /**
      * $fields may include: site_label, url, image_url, price, price_currency, quantity,
      * quantity_unit. Any key omitted (not just null) keeps whatever that slot already had — e.g.
@@ -257,5 +272,26 @@ final class WatchlistRepository
             'DELETE FROM watchlist_product_choices WHERE watchlist_product_id = :wp_id AND rank = :rank'
         );
         $stmt->execute(['wp_id' => $watchlistProductId, 'rank' => $rank]);
+    }
+
+    /**
+     * Appends to price_observations — the time-series log a stage-2 fetcher builds up (distinct
+     * from a choice's price/price_captured_at, which is just "the current best-known snapshot").
+     * effective_price is just price + shipping for now; a threshold-aware effective price
+     * (free-shipping cutoffs) is deferred, same as in PROJECT-BRIEF.md's stage 4/5 notes.
+     */
+    public function recordPriceObservation(int $watchlistProductId, int $siteId, float $price, float $shippingCharge = 0.0): void
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO price_observations (watchlist_product_id, site_id, price, shipping_charge, effective_price, in_stock)
+             VALUES (:wp_id, :site_id, :price, :shipping, :effective, 1)'
+        );
+        $stmt->execute([
+            'wp_id' => $watchlistProductId,
+            'site_id' => $siteId,
+            'price' => $price,
+            'shipping' => $shippingCharge,
+            'effective' => $price + $shippingCharge,
+        ]);
     }
 }

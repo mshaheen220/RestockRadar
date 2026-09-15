@@ -205,6 +205,29 @@ function setStatus(message, kind) {
   el.className = kind || '';
 }
 
+// captured_at comes back as SQLite's datetime('now') — 'YYYY-MM-DD HH:MM:SS' in UTC.
+function formatCapturedAt(sqliteUtc) {
+  const date = new Date(`${sqliteUtc.replace(' ', 'T')}Z`);
+  const minutes = Math.round((Date.now() - date.getTime()) / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+async function loadWalmartSessionStatus(backendUrl, token) {
+  const el = document.getElementById('walmart-session-status');
+  try {
+    const res = await fetch(`${backendUrl}/site-sessions/Walmart`, { headers: authHeaders(token) });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const data = await res.json();
+    el.textContent = data.captured ? `Captured ${formatCapturedAt(data.captured_at)}` : 'Not captured yet.';
+  } catch {
+    el.textContent = 'Could not check session status.';
+  }
+}
+
 async function loadProducts(backendUrl, token) {
   const select = document.getElementById('product');
   try {
@@ -246,6 +269,7 @@ async function init() {
   document.getElementById('api-token').value = apiToken;
 
   loadProducts(backendUrl, apiToken);
+  loadWalmartSessionStatus(backendUrl, apiToken);
   document.getElementById('product').addEventListener('change', updateSlotOptions);
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -325,6 +349,50 @@ async function init() {
     await chrome.storage.local.set({ backendUrl: url, apiToken: token });
     setStatus('Settings saved.', 'success');
     loadProducts(url, token);
+    loadWalmartSessionStatus(url, token);
+  });
+
+  // Reads the current tab's own walmart.com cookies (chrome.cookies, needs the "cookies"
+  // permission + the *://*.walmart.com/* host permission) and hands them to the backend as a
+  // plain Cookie header string — this is just replaying the user's own signed-in session, the
+  // same session their real browser already has, so it isn't a bot-shaped request in the first
+  // place (same reasoning as extractProductInfo() above, applied to a fetcher instead of a page read).
+  document.getElementById('capture-walmart-session').addEventListener('click', async () => {
+    const button = document.getElementById('capture-walmart-session');
+    button.disabled = true;
+
+    try {
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const hostname = new URL(activeTab.url).hostname;
+      if (!hostname.endsWith('walmart.com')) {
+        throw new Error('Open a walmart.com page (signed in) first, then try again.');
+      }
+
+      const cookies = await chrome.cookies.getAll({ domain: 'walmart.com' });
+      if (cookies.length === 0) {
+        throw new Error("No walmart.com cookies found — make sure you're signed in.");
+      }
+      const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+
+      const currentBackendUrl = await getBackendUrl();
+      const currentToken = await getApiToken();
+      const res = await fetch(`${currentBackendUrl}/site-sessions/Walmart`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders(currentToken) },
+        body: JSON.stringify({ cookie_header: cookieHeader }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || `${res.status} ${res.statusText}`);
+      }
+
+      document.getElementById('walmart-session-status').textContent = 'Captured just now.';
+      setStatus('Walmart session captured.', 'success');
+    } catch (err) {
+      setStatus(err.message, 'error');
+    } finally {
+      button.disabled = false;
+    }
   });
 }
 

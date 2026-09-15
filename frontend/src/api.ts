@@ -190,6 +190,9 @@ export const watchlistApi = {
   ) => request<WatchlistProduct>(`/watchlist/${id}/choices`, { method: 'POST', body: JSON.stringify(input) }),
   removeChoice: (id: number, rank: number) =>
     request<WatchlistProduct>(`/watchlist/${id}/choices/${rank}`, { method: 'DELETE' }),
+  /** Live fetch — Walmart URLs only today. See backend WalmartFetcher. */
+  refreshChoicePrice: (id: number, rank: number) =>
+    request<WatchlistProduct>(`/watchlist/${id}/choices/${rank}/refresh-price`, { method: 'POST' }),
   matchSuggestions: (id: number) => request<MatchSuggestion[]>(`/watchlist/${id}/match-suggestions`),
   acceptSuggestion: (id: number, input: { site_name: string; raw_product_name: string }) =>
     request<WatchlistProduct>(`/watchlist/${id}/match-suggestions/accept`, { method: 'POST', body: JSON.stringify(input) }),

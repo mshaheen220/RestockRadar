@@ -42,3 +42,20 @@ here. Without one, requests come back "Not signed in."
 If you later move RestockRadar off `localhost` (e.g. deploying to TheForge per the brief), you'll
 also need to add that host to `host_permissions` in `manifest.json` and reload the extension —
 Chrome only lets an extension's background/popup scripts fetch hosts it explicitly declares.
+
+## Live price sessions (Walmart)
+
+The **Live price sessions** panel (also under the popup's collapsible sections) lets RestockRadar
+check a Walmart price on demand from the web app — the "refresh" icon next to a Walmart choice in
+**Manage Watchlist** — without you having to open that product's page yourself.
+
+1. Sign into walmart.com in this browser, in any tab.
+2. Open the extension on that tab and click **Capture Walmart session**. It reads your
+   walmart.com cookies (via `chrome.cookies` — this extension never sees or stores your Walmart
+   password, just the cookies your browser already has) and sends them to the backend.
+3. Recapture whenever the web app tells you the session's expired, or periodically — there's no
+   fixed lifetime, it depends on how long Walmart keeps a browser session valid.
+
+This is separate from **Save to watchlist** above: that one is a one-time snapshot you take
+yourself, on the page, right now. The captured session is what lets the backend check a price
+*later*, on its own, for any Walmart choice already on your watchlist.

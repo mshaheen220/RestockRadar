@@ -31,6 +31,7 @@
  *   DELETE /api/watchlist/{id}/aliases/{aliasId}
  *   POST   /api/watchlist/{id}/choices        { rank, label, site_name?, url? }
  *   DELETE /api/watchlist/{id}/choices/{rank}
+ *   POST   /api/watchlist/{id}/choices/{rank}/refresh-price  — live fetch (Walmart URLs only today)
  *   GET    /api/watchlist/{id}/match-suggestions
  *   POST   /api/watchlist/{id}/match-suggestions/accept
  *   POST   /api/watchlist/{id}/match-suggestions/reject
@@ -42,6 +43,8 @@
  *   POST   /api/coverage/pack-quantity   { site_name, raw_product_name, pack_quantity }
  *   POST   /api/coverage/transaction     { site_name, raw_product_name, quantity, unit_price } — single-purchase items only
  *   GET    /api/sites
+ *   GET    /api/site-sessions/{site}   — whether a live-fetch session is captured, and when
+ *   POST   /api/site-sessions/{site}   { cookie_header }  — from the extension's "Capture session" button
  *   GET    /api/product-preview?url=
  *   GET    /api/transactions/summary
  *   POST   /api/purchases/import  { csv }  — bulk, same format as transaction_log.csv
@@ -56,6 +59,8 @@ require __DIR__ . '/../vendor/autoload.php';
 use RestockRadar\Analysis\DealDetector;
 use RestockRadar\Analysis\PackQuantity;
 use RestockRadar\Auth\AuthService;
+use RestockRadar\Fetchers\SiteSessionRepository;
+use RestockRadar\Fetchers\WalmartFetcher;
 use RestockRadar\Import\TransactionImporter;
 use RestockRadar\Matching\CoverageService;
 use RestockRadar\Matching\ProductMatcher;
@@ -541,6 +546,52 @@ if (preg_match('#^/watchlist/(\d+)/choices/(\d+)$#', $path, $m) && $method === '
     respond($watchlistRepo->find($watchlistId));
 }
 
+/**
+ * Stage 2, live: re-fetches a choice's price straight from the site instead of waiting for the
+ * wand/extension to be run against that page again. Walmart only for now (see WalmartFetcher) —
+ * detected from the choice's own url, not its free-text site_label, since the extension saves the
+ * page's hostname there verbatim (e.g. "www.walmart.com") rather than a canonical site name.
+ */
+if (preg_match('#^/watchlist/(\d+)/choices/(\d+)/refresh-price$#', $path, $m) && $method === 'POST') {
+    [$watchlistId, $rank] = [(int) $m[1], (int) $m[2]];
+
+    $choice = $watchlistRepo->findChoice($watchlistId, $rank);
+    if ($choice === null) {
+        respond(['error' => 'No choice in that slot'], 404);
+    }
+
+    $host = $choice['url'] !== null ? parse_url($choice['url'], PHP_URL_HOST) : null;
+    if ($host === null || !str_ends_with(strtolower($host), 'walmart.com')) {
+        respond(['error' => 'Live price refresh is only supported for Walmart product URLs right now.'], 422);
+    }
+
+    $session = (new SiteSessionRepository($pdo))->get('Walmart');
+    if ($session === null) {
+        respond([
+            'error' => "No Walmart session captured yet — open the extension on any walmart.com page you're signed into and click \"Capture Walmart session\".",
+        ], 409);
+    }
+
+    try {
+        $fetched = (new WalmartFetcher())->fetchPrice($choice['url'], $session['cookie_header']);
+    } catch (\RuntimeException $e) {
+        respond(['error' => $e->getMessage()], 502);
+    }
+
+    $fields = ['price' => $fetched['price']];
+    if ($fetched['currency'] !== null) {
+        $fields['price_currency'] = $fetched['currency'];
+    }
+    $watchlistRepo->setChoice($watchlistId, $rank, $choice['label'], $fields);
+
+    $siteId = $watchlistRepo->siteIdByName('Walmart');
+    if ($siteId !== null) {
+        $watchlistRepo->recordPriceObservation($watchlistId, $siteId, (float) $fetched['price']);
+    }
+
+    respond($watchlistRepo->find($watchlistId));
+}
+
 if (preg_match('#^/watchlist/(\d+)/match-suggestions$#', $path, $m) && $method === 'GET') {
     $watchlistId = (int) $m[1];
     $product = $watchlistRepo->find($watchlistId);
@@ -625,6 +676,25 @@ if ($path === '/coverage/items' && $method === 'GET') {
 
 if ($path === '/sites' && $method === 'GET') {
     respond($pdo->query('SELECT id, name FROM sites ORDER BY name')->fetchAll());
+}
+
+/**
+ * Never returns the raw cookie_header — it's a live credential for the underlying site, not
+ * something the frontend needs back. Just enough to show "captured 2 hours ago" / "not captured".
+ */
+if (preg_match('#^/site-sessions/([^/]+)$#', $path, $m) && $method === 'GET') {
+    $session = (new SiteSessionRepository($pdo))->get($m[1]);
+    respond(['site_name' => $m[1], 'captured' => $session !== null, 'captured_at' => $session['captured_at'] ?? null]);
+}
+
+if (preg_match('#^/site-sessions/([^/]+)$#', $path, $m) && $method === 'POST') {
+    $body = jsonBody();
+    if (!isset($body['cookie_header']) || trim((string) $body['cookie_header']) === '') {
+        respond(['error' => 'cookie_header is required'], 422);
+    }
+
+    (new SiteSessionRepository($pdo))->set($m[1], $body['cookie_header']);
+    respond(['site_name' => $m[1], 'captured' => true], 201);
 }
 
 if ($path === '/coverage/ignore' && $method === 'POST') {

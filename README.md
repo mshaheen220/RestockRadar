@@ -60,7 +60,33 @@ Five-stage pipeline, single direction:
    `frontend/src/priceUtils.ts` (`formatMoney`, `unitPriceBadge`, `unitPriceBadgeClass`) —
    deliberately not stored/derived columns on the frontend side, computed on read so they can
    never drift out of sync with their inputs.
-2. **Site fetchers** — `backend/src/Fetchers` — **not implemented yet** (deferred; see Status below).
+2. **Site fetchers** — `backend/src/Fetchers`. First implementation: `WalmartFetcher`, wired through
+   `POST /watchlist/{id}/choices/{rank}/refresh-price` (a per-choice "check the price right now"
+   button in Manage Watchlist, next to any choice whose `url` is on walmart.com). A plain,
+   cookie-less request to a Walmart product page is confirmed bot-walled (`ProductPreviewFetcher`
+   gets back a "Robot or human?" challenge page) — `WalmartFetcher` instead attaches a `Cookie`
+   header captured from the user's own logged-in browser, via a new extension action ("Capture
+   Walmart session" in the popup's "Live price sessions" panel, using `chrome.cookies.getAll` —
+   needs the new `cookies` permission and `*://*.walmart.com/*` host permission) that POSTs the
+   raw cookie string to `POST /site-sessions/{site}`. `SiteSessionRepository` stores it (one row
+   per site, overwritten on recapture — `backend/database/schema.sql`'s `site_sessions` table);
+   the raw value is a live credential for that site session, so it's never returned to the
+   frontend, only `{captured, captured_at}` is. **Surprising result from testing (2026-09):** even
+   a garbage, non-authenticated cookie header (not Michael's real session) was enough to get past
+   the "Robot or human?" wall for a real product page and parse a real price back — an anonymous
+   request with *zero* cookies is what's actually detected, not specifically "not logged in." A
+   real captured session is still what's recommended (Walmart may fingerprint more than cookie
+   presence over time, or personalize pricing per account), but this means the wall is weaker than
+   `ProductPreviewFetcher`'s docs originally suggested. On success, the fetched price updates the
+   choice's `price`/`price_currency`/`price_captured_at` (same fields the wand/extension already
+   write) **and** appends a row to `price_observations` (schema already had this table, unused
+   until now — a time-series log distinct from "the choice's current best-known price snapshot",
+   for future rolling-low/effective-price analysis). `SiteFetcher`'s interface was updated to match
+   this real shape (`fetchPrice(string $url, string $cookieHeader)`, not a bare site-specific id —
+   a URL is what's actually on hand on a `watchlist_product_choices` row) since nothing had
+   implemented the old one yet. Amazon/Costco/Chewy fetchers don't exist yet — same approach should
+   extend to them, but each site's bot-wall behavior needs testing independently; nothing here
+   assumes it generalizes without checking.
 3. **Price & purchase history** — SQLite (`backend/database/schema.sql`), loaded from `transaction_log.csv`
    via `backend/scripts/import_transactions.php`, which is now a thin wrapper around
    `RestockRadar\Import\TransactionImporter::importCsvFromFile()` — the same class
@@ -239,8 +265,15 @@ disabled until clicked.
   products exist against ~3,700 distinct unmatched item names — high-frequency items like "Fresh Banana,
   Each" (121×) show up unmatched simply because nothing on the watchlist covers produce yet, not because
   matching failed.
-- Stage 2 (live site fetchers) is **intentionally deferred** — no live fetcher exists for any site yet.
-  `backend/src/Fetchers/SiteFetcher.php` documents the contract future fetchers should implement.
+- Stage 2 (live site fetchers) has one real implementation now: `WalmartFetcher` (see the
+  Architecture section above for how it gets past Walmart's bot wall, and the surprising result
+  that even a non-authenticated cookie was enough to in testing). Amazon/Costco/Chewy fetchers
+  still don't exist — `backend/src/Fetchers/SiteFetcher.php` documents the contract they should
+  implement, but each site's own bot-wall behavior needs to be tested before assuming the same
+  approach works.
+- Live fetching is triggered manually (the refresh button next to a Walmart choice in Manage
+  Watchlist) — nothing runs on a schedule, same reason as Deal Finder's manual Analyze button:
+  RestockRadar isn't deployed anywhere always-on yet.
 
 ## Data privacy
 
@@ -311,7 +344,7 @@ Point Caddy's site block at `frontend/dist` for static files and reverse-proxy `
 backend/            PHP API + analysis (stages 1, 3, 4, 5)
   src/Auth/          users, sessions, API tokens, roles (AuthService)
   src/Watchlist/     stage 1 — watchlist CRUD
-  src/Fetchers/      stage 2 — contract only, not implemented
+  src/Fetchers/      stage 2 — WalmartFetcher implemented; SiteFetcher contract for the rest
   src/Storage/       PDO/SQLite connection
   src/Import/        stage 3 — TransactionImporter (CSV bulk + single-purchase add)
   src/Analysis/      stage 4 — deal detection (PackQuantity, DealDetector)

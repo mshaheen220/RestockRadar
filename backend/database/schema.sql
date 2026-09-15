@@ -183,8 +183,21 @@ CREATE TABLE IF NOT EXISTS price_observations (
     in_stock              INTEGER NOT NULL DEFAULT 1
 );
 
+-- Stage 2: a cookie-persisted session captured from the user's own logged-in browser (via the
+-- extension's "Capture session" action), for site fetchers that need to look like a real
+-- logged-in user rather than an anonymous request — see WalmartFetcher. One row per site;
+-- capturing again overwrites the previous session outright, since only the most recent one is
+-- ever useful. The raw cookie value is only as sensitive as the site session it represents (not
+-- a password), but it's still a live credential — never logged, never returned to the frontend.
+CREATE TABLE IF NOT EXISTS site_sessions (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_name      TEXT NOT NULL UNIQUE,
+    cookie_header  TEXT NOT NULL,
+    captured_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 INSERT OR IGNORE INTO sites (name, has_live_fetch, notes) VALUES
-    ('Walmart', 0, 'Order-history CSV export used for stage 3; bot protection blocks live fetch today.'),
+    ('Walmart', 1, 'Order-history CSV export used for stage 3. Live fetch (WalmartFetcher) works as of 2026-09 by attaching a captured session cookie to the request — an anonymous request with no cookie at all is still bot-walled ("Robot or human?"), but a request carrying any cookie header has gotten through in testing. Not guaranteed to stay working if Walmart tightens this.'),
     ('Amazon', 0, 'Order History.csv export used for stage 3; bot protection blocks live fetch today.'),
     ('Costco', 0, 'Receipt PDF text extraction used for stage 3; no official API.'),
     ('Chewy', 0, 'Pasted invoice text used for stage 3; Autoship-only history so far.'),

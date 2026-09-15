@@ -158,6 +158,17 @@
     <div id="status"></div>
 
     <details>
+      <summary>Live price sessions</summary>
+      <p style="font-size: 11px; color: #78716c; margin: 6px 0 0;">
+        Lets RestockRadar check a Walmart price on demand without you opening the page — by
+        reusing your own signed-in session. Open any walmart.com page while signed in, then
+        capture it here; recapture whenever it expires.
+      </p>
+      <div id="walmart-session-status" style="font-size: 11px; color: #78716c; margin-top: 6px;">Checking…</div>
+      <button id="capture-walmart-session" class="secondary">Capture Walmart session</button>
+    </details>
+
+    <details>
       <summary>Backend settings</summary>
       <label for="backend-url">RestockRadar API URL</label>
       <input id="backend-url" type="text" placeholder="http://localhost:8734/api" />
