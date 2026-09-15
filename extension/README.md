@@ -28,10 +28,16 @@ Not published to the Chrome Web Store — it's a personal tool, installed as an 
 4. Set a **Good price (per unit)** on the watchlist item itself (in the web app, not the extension)
    to have preferred products show up green/red for whether they clear that price.
 
-## Backend URL
+## Backend settings
 
 Defaults to `http://localhost:8734/api` — matches the Docker Compose setup in the repo root. If
 you run the backend on a different port, change it under **Backend settings** in the popup.
+
+RestockRadar requires sign-in now, and this extension can't hold a session cookie the way the web
+app does (it lives at its own `chrome-extension://` address, not RestockRadar's). Instead, it
+uses a long-lived **API token**: in the web app, open **Settings → API tokens**, create one, copy
+it (shown exactly once), and paste it into the **API token** field right below the backend URL
+here. Without one, requests come back "Not signed in."
 
 If you later move RestockRadar off `localhost` (e.g. deploying to TheForge per the brief), you'll
 also need to add that host to `host_permissions` in `manifest.json` and reload the extension —

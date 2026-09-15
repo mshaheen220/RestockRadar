@@ -34,6 +34,7 @@ import {
   unitPriceBadgeClass,
   unitsComparable,
 } from '../priceUtils';
+import { useAuth } from '../AuthContext';
 import RankBadge, { SLOT_LABEL } from './RankBadge';
 import SiteIcon from './SiteIcon';
 
@@ -44,6 +45,7 @@ const IMPORTANCE_LABEL: Record<Importance, string> = {
 };
 
 function CriteriaEditor({ product, onChange }: { product: WatchlistProduct; onChange: () => void }) {
+  const { canWrite } = useAuth();
   const [key, setKey] = useState('');
   const [value, setValue] = useState('');
   const [importance, setImportance] = useState<Importance>('preferred');
@@ -88,19 +90,22 @@ function CriteriaEditor({ product, onChange }: { product: WatchlistProduct; onCh
           >
             <span className="font-medium">{c.attribute_key}:</span> {c.attribute_value}
             <span className="text-stone-500 dark:text-stone-400">({IMPORTANCE_LABEL[c.importance]})</span>
-            <button
-              type="button"
-              onClick={() => removeCriterion(c.id)}
-              aria-label={`Remove ${c.attribute_key} criterion`}
-              title="Remove"
-              className="text-stone-400 hover:text-red-600 ml-0.5"
-            >
-              <X size={12} />
-            </button>
+            {canWrite && (
+              <button
+                type="button"
+                onClick={() => removeCriterion(c.id)}
+                aria-label={`Remove ${c.attribute_key} criterion`}
+                title="Remove"
+                className="text-stone-400 hover:text-red-600 ml-0.5"
+              >
+                <X size={12} />
+              </button>
+            )}
           </li>
         ))}
       </ul>
 
+      {canWrite && (
       <form onSubmit={addCriterion} className="flex flex-wrap gap-2 items-end">
         <div>
           <label htmlFor={`crit-key-${product.id}`} className="block text-xs text-stone-500 dark:text-stone-400">
@@ -150,6 +155,7 @@ function CriteriaEditor({ product, onChange }: { product: WatchlistProduct; onCh
           Add
         </button>
       </form>
+      )}
       {error && <p className="text-red-600 text-sm">{error}</p>}
     </div>
   );
@@ -158,6 +164,7 @@ function CriteriaEditor({ product, onChange }: { product: WatchlistProduct; onCh
 const ALIASES_COLLAPSED_COUNT = 5;
 
 function MatchReview({ product, onChange }: { product: WatchlistProduct; onChange: () => void }) {
+  const { canWrite } = useAuth();
   const [suggestions, setSuggestions] = useState<MatchSuggestion[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -212,15 +219,17 @@ function MatchReview({ product, onChange }: { product: WatchlistProduct; onChang
                   {a.site_name}
                 </span>
                 <span className="flex-1 min-w-0">{a.raw_product_name}</span>
-                <button
-                  type="button"
-                  onClick={() => removeAlias(a.id)}
-                  aria-label={`Unlink ${a.raw_product_name}`}
-                  title="Unlink"
-                  className="shrink-0 p-1 rounded text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                >
-                  <X size={14} />
-                </button>
+                {canWrite && (
+                  <button
+                    type="button"
+                    onClick={() => removeAlias(a.id)}
+                    aria-label={`Unlink ${a.raw_product_name}`}
+                    title="Unlink"
+                    className="shrink-0 p-1 rounded text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -274,26 +283,28 @@ function MatchReview({ product, onChange }: { product: WatchlistProduct; onChang
                     ({s.transaction_count}× · {Math.round(s.score * 100)}% match)
                   </span>
                 </span>
-                <span className="flex gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => accept(s)}
-                    aria-label={`Accept match: ${s.raw_product_name}`}
-                    title="Accept match"
-                    className="p-1.5 rounded text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-800/40"
-                  >
-                    <Check size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => reject(s)}
-                    aria-label={`Dismiss match: ${s.raw_product_name}`}
-                    title="Dismiss match"
-                    className="p-1.5 rounded text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
-                  >
-                    <X size={16} />
-                  </button>
-                </span>
+                {canWrite && (
+                  <span className="flex gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => accept(s)}
+                      aria-label={`Accept match: ${s.raw_product_name}`}
+                      title="Accept match"
+                      className="p-1.5 rounded text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-800/40"
+                    >
+                      <Check size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => reject(s)}
+                      aria-label={`Dismiss match: ${s.raw_product_name}`}
+                      title="Dismiss match"
+                      className="p-1.5 rounded text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
+                    >
+                      <X size={16} />
+                    </button>
+                  </span>
+                )}
               </li>
             ))}
           </ul>
@@ -546,6 +557,7 @@ function unitPriceInfo(choice: Choice, product: WatchlistProduct) {
 }
 
 function PreferredProducts({ product, onChange }: { product: WatchlistProduct; onChange: () => void }) {
+  const { canWrite } = useAuth();
   const [editingRank, setEditingRank] = useState<number | null>(null);
   const byRank = new Map(product.choices.map((c) => [c.rank, c]));
 
@@ -649,26 +661,30 @@ function PreferredProducts({ product, onChange }: { product: WatchlistProduct; o
                       <ExternalLink size={14} />
                     </a>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => setEditingRank(rank)}
-                    aria-label={`Edit ${SLOT_LABEL[rank]}`}
-                    title="Edit"
-                    className="shrink-0 p-1 rounded text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-800/40"
-                  >
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => remove(rank)}
-                    aria-label={`Remove ${SLOT_LABEL[rank]}`}
-                    title="Remove"
-                    className="shrink-0 p-1 rounded text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                  >
-                    <X size={14} />
-                  </button>
+                  {canWrite && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setEditingRank(rank)}
+                        aria-label={`Edit ${SLOT_LABEL[rank]}`}
+                        title="Edit"
+                        className="shrink-0 p-1 rounded text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-800/40"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => remove(rank)}
+                        aria-label={`Remove ${SLOT_LABEL[rank]}`}
+                        title="Remove"
+                        className="shrink-0 p-1 rounded text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                      >
+                        <X size={14} />
+                      </button>
+                    </>
+                  )}
                 </>
-              ) : (
+              ) : canWrite ? (
                 <button
                   type="button"
                   onClick={() => setEditingRank(rank)}
@@ -676,6 +692,8 @@ function PreferredProducts({ product, onChange }: { product: WatchlistProduct; o
                 >
                   <Plus size={14} /> Add
                 </button>
+              ) : (
+                <span className="flex-1 text-stone-400 dark:text-stone-500">—</span>
               )}
             </li>
           );
@@ -769,6 +787,7 @@ function PriceHistory({ product }: { product: WatchlistProduct }) {
 }
 
 function ProductRow({ product, onChange }: { product: WatchlistProduct; onChange: () => void }) {
+  const { canWrite } = useAuth();
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [displayName, setDisplayName] = useState(product.display_name);
@@ -896,7 +915,7 @@ function ProductRow({ product, onChange }: { product: WatchlistProduct; onChange
           )}
         </div>
 
-        {!editing && (
+        {!editing && canWrite && (
           <div className="flex gap-1 shrink-0">
             <button
               type="button"
@@ -1004,6 +1023,7 @@ function NewProductForm({ onCreated }: { onCreated: () => void }) {
 }
 
 export default function WatchlistManager() {
+  const { canWrite } = useAuth();
   const [products, setProducts] = useState<WatchlistProduct[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -1018,7 +1038,7 @@ export default function WatchlistManager() {
 
   return (
     <div className="space-y-4 max-w-3xl">
-      <NewProductForm onCreated={reload} />
+      {canWrite && <NewProductForm onCreated={reload} />}
 
       {error && <p className="text-red-600 text-sm">Couldn't load watchlist: {error}</p>}
       {products === null && !error && <p className="text-sm text-stone-500 dark:text-stone-400">Loading…</p>}

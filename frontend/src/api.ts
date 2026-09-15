@@ -67,7 +67,9 @@ export type CoverageSummary = {
   ignored_transactions: number;
   unmatched_transactions: number;
   unmatched_distinct_items: number;
-  linked_ratio: number;
+  /** linked / (linked + unmatched) — deliberately excludes ignored items from the denominator,
+   * since "ignored" is a resting state you chose, not unfinished work. */
+  relevant_linked_ratio: number;
 };
 
 export type CoverageStatus = 'linked' | 'unmatched' | 'ignored';
@@ -141,12 +143,16 @@ export type DealFinderProduct = {
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    // Explicit even though the Vite/Caddy proxy makes this same-origin (where the browser would
+    // send the session cookie by default anyway) — keeps working if that proxy is ever missing.
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
   });
 
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.error ?? `${res.status} ${res.statusText}`);
+    const message = body?.error ?? `${res.status} ${res.statusText}`;
+    throw Object.assign(new Error(message), { status: res.status });
   }
 
   return res.json();
@@ -247,4 +253,37 @@ export const previewApi = {
       quantity: number | null;
       quantity_unit: string | null;
     }>(`/product-preview?url=${encodeURIComponent(url)}`),
+};
+
+export type Role = 'admin' | 'contributor' | 'viewer';
+
+export type CurrentUser = { id: number; username: string; role: Role };
+
+export type ApiToken = { id: number; label: string | null; created_at: string; last_used_at: string | null };
+
+export type UserAccount = { id: number; username: string; role: Role; active: number; created_at: string };
+
+export const authApi = {
+  login: (username: string, password: string) =>
+    request<CurrentUser>('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  logout: () => request<{ loggedOut: true }>('/auth/logout', { method: 'POST' }),
+  me: () => request<CurrentUser>('/auth/me'),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ changed: true }>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
+  listTokens: () => request<ApiToken[]>('/auth/tokens'),
+  createToken: (label: string | null) =>
+    request<{ token: string }>('/auth/tokens', { method: 'POST', body: JSON.stringify({ label }) }),
+  revokeToken: (id: number) => request<{ revoked: true }>(`/auth/tokens/${id}`, { method: 'DELETE' }),
+};
+
+export const usersApi = {
+  list: () => request<UserAccount[]>('/users'),
+  create: (input: { username: string; password: string; role: Role }) =>
+    request<{ id: number }>('/users', { method: 'POST', body: JSON.stringify(input) }),
+  update: (id: number, fields: { role?: Role; active?: boolean; password?: string }) =>
+    request<{ updated: true }>(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(fields) }),
+  remove: (id: number) => request<{ deleted: number }>(`/users/${id}`, { method: 'DELETE' }),
 };

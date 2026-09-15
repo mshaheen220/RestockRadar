@@ -1,23 +1,26 @@
 import { useState } from 'react';
-import { Radar } from 'lucide-react';
+import { LogOut, Radar } from 'lucide-react';
+import { AuthProvider, useAuth } from './AuthContext';
 import CoverageView from './components/CoverageView';
 import DealFinder from './components/DealFinder';
-import Purchases from './components/Purchases';
+import Login from './components/Login';
+import Settings from './components/Settings';
 import ThemeSwitcher from './components/ThemeSwitcher';
 import VersionBadge from './components/VersionBadge';
 import WatchlistManager from './components/WatchlistManager';
 
-type Tab = 'deal-finder' | 'manage' | 'purchases' | 'coverage';
+type Tab = 'deal-finder' | 'manage' | 'purchases' | 'settings';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'deal-finder', label: 'Deal Finder' },
   { id: 'manage', label: 'Manage Watchlist' },
   { id: 'purchases', label: 'Purchases' },
-  { id: 'coverage', label: 'Coverage' },
+  { id: 'settings', label: 'Settings' },
 ];
 
-export default function App() {
+function AuthenticatedApp() {
   const [tab, setTab] = useState<Tab>('deal-finder');
+  const { user, canWrite, logout } = useAuth();
 
   return (
     <div className="min-h-screen">
@@ -47,14 +50,52 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <ThemeSwitcher />
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-stone-500 dark:text-stone-400">
+            {user?.username}
+            {!canWrite && (
+              <span
+                className="ml-1.5 text-xs px-1.5 py-0.5 rounded bg-stone-200 dark:bg-stone-800 text-stone-500 dark:text-stone-400"
+                title="Your account can view everything but can't add, edit, link, or import anything."
+              >
+                read-only
+              </span>
+            )}
+          </span>
+          <button
+            type="button"
+            onClick={() => void logout()}
+            aria-label="Sign out"
+            title="Sign out"
+            className="p-1.5 rounded text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"
+          >
+            <LogOut size={16} />
+          </button>
+          <ThemeSwitcher />
+        </div>
       </header>
       <main className="p-4 sm:p-6">
         {tab === 'deal-finder' && <DealFinder />}
         {tab === 'manage' && <WatchlistManager />}
-        {tab === 'purchases' && <Purchases />}
-        {tab === 'coverage' && <CoverageView />}
+        {tab === 'purchases' && <CoverageView />}
+        {tab === 'settings' && <Settings />}
       </main>
     </div>
+  );
+}
+
+function Gate() {
+  const { user, loading } = useAuth();
+
+  if (loading) return null;
+  if (!user) return <Login />;
+  return <AuthenticatedApp />;
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <Gate />
+    </AuthProvider>
   );
 }

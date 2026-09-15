@@ -39,13 +39,20 @@ final class CoverageService
             )"
         )->fetchColumn();
 
+        // Deliberately NOT linked/total — "ignored" is a resting state you chose (a one-off Amazon
+        // DVD, produce you're not tracking), not unfinished work, so it shouldn't drag this number
+        // down. This answers "of what I actually care about organizing, how much is done" —
+        // linked vs. (linked + unmatched) — which can genuinely read 100% while ignored sits at
+        // 90% of everything ever purchased.
+        $relevant = $linked + $unmatched;
+
         return [
             'total_transactions' => $total,
             'linked_transactions' => $linked,
             'ignored_transactions' => $ignored,
             'unmatched_transactions' => $unmatched,
             'unmatched_distinct_items' => $distinctUnmatched,
-            'linked_ratio' => $total > 0 ? round($linked / $total, 3) : 0.0,
+            'relevant_linked_ratio' => $relevant > 0 ? round($linked / $relevant, 3) : 1.0,
         ];
     }
 

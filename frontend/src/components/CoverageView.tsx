@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, Eye, EyeOff, Link2, Pencil, Unlink, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Eye, EyeOff, Link2, Pencil, Plus, Unlink, X } from 'lucide-react';
 import {
   coverageApi,
   sitesApi,
@@ -11,6 +11,8 @@ import {
   type WatchlistProduct,
 } from '../api';
 import { formatMoney, unitPriceBadge, unitPriceBadgeClass } from '../priceUtils';
+import { useAuth } from '../AuthContext';
+import AddPurchasePanel from './AddPurchasePanel';
 import SiteIcon from './SiteIcon';
 
 const PAGE_SIZE = 25;
@@ -41,48 +43,24 @@ function itemKey(item: CoverageItem): string {
   return `${item.site_id}::${item.product_name}`;
 }
 
-function SummaryTiles({ summary }: { summary: CoverageSummary }) {
-  const percent = Math.round(summary.linked_ratio * 100);
+/**
+ * Deliberately a single de-emphasized line, not a big card with a progress bar — the table below
+ * is this page's actual job. The percentage is linked/(linked+unmatched), NOT linked/total: an
+ * "ignored" item is a resting state you chose (a one-off Amazon DVD, produce you're not
+ * tracking), not unfinished work, so it's excluded from both sides of that fraction rather than
+ * silently dragging the number down — a household that's ignored 90% of its history and linked
+ * the rest can legitimately read "100% of what you're tracking," not some tiny misleading digit.
+ */
+function CoverageStats({ summary }: { summary: CoverageSummary }) {
+  const percent = Math.round(summary.relevant_linked_ratio * 100);
 
   return (
-    <section
-      aria-labelledby="coverage-summary-heading"
-      className="rounded-xl border border-brand-200 dark:border-brand-800 bg-white dark:bg-stone-900 p-4"
-    >
-      <h2 id="coverage-summary-heading" className="font-semibold mb-3">
-        How much of your purchase history is organized
-      </h2>
-
-      <div
-        role="progressbar"
-        aria-valuenow={percent}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-label="Percent of transactions linked to a watchlist product"
-        className="h-3 rounded-full bg-stone-200 dark:bg-stone-800 overflow-hidden mb-3"
-      >
-        <div className="h-full bg-brand-500" style={{ width: `${percent}%` }} />
-      </div>
-
-      <dl className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-        <div>
-          <dt className="text-stone-500 dark:text-stone-400">Linked</dt>
-          <dd className="text-lg font-semibold">{percent}%</dd>
-        </div>
-        <div>
-          <dt className="text-stone-500 dark:text-stone-400">Total transactions</dt>
-          <dd className="text-lg font-semibold">{summary.total_transactions.toLocaleString()}</dd>
-        </div>
-        <div>
-          <dt className="text-stone-500 dark:text-stone-400">Unmatched items</dt>
-          <dd className="text-lg font-semibold">{summary.unmatched_distinct_items.toLocaleString()}</dd>
-        </div>
-        <div>
-          <dt className="text-stone-500 dark:text-stone-400">Ignored transactions</dt>
-          <dd className="text-lg font-semibold">{summary.ignored_transactions.toLocaleString()}</dd>
-        </div>
-      </dl>
-    </section>
+    <p className="text-sm text-stone-500 dark:text-stone-400">
+      <span className="font-medium text-stone-700 dark:text-stone-300">{percent}%</span> of what you're tracking is
+      linked · {summary.unmatched_distinct_items.toLocaleString()} unmatched item
+      {summary.unmatched_distinct_items === 1 ? '' : 's'} · {summary.ignored_transactions.toLocaleString()} ignored ·{' '}
+      {summary.total_transactions.toLocaleString()} purchases total
+    </p>
   );
 }
 
@@ -138,12 +116,20 @@ function RowActions({
   products,
   onChanged,
   onEdit,
+  readOnly,
 }: {
   item: CoverageItem;
   products: WatchlistProduct[];
   onChanged: () => void;
   onEdit: () => void;
+  readOnly: boolean;
 }) {
+  if (readOnly) {
+    return item.status === 'linked' ? (
+      <span className="text-stone-500 dark:text-stone-400">→ {item.linked_product_name}</span>
+    ) : null;
+  }
+
   const unlink = async () => {
     if (item.watchlist_product_id === null || item.alias_id === null) return;
     await watchlistApi.removeAlias(item.watchlist_product_id, item.alias_id);
@@ -486,6 +472,7 @@ function BulkActionBar({
 }
 
 export default function CoverageView() {
+  const { canWrite } = useAuth();
   const [summary, setSummary] = useState<CoverageSummary | null>(null);
   const [products, setProducts] = useState<WatchlistProduct[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
@@ -499,6 +486,7 @@ export default function CoverageView() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [showAddPanel, setShowAddPanel] = useState(false);
 
   const loadSummary = () => {
     coverageApi.summary().then(setSummary).catch((err: Error) => setError(err.message));
@@ -596,19 +584,35 @@ export default function CoverageView() {
   return (
     <div className="space-y-4 max-w-4xl">
       {error && <p className="text-red-600 text-sm">{error}</p>}
-      {summary && <SummaryTiles summary={summary} />}
 
       <section
         aria-labelledby="coverage-items-heading"
         className="rounded-xl border border-brand-200 dark:border-brand-800 bg-white dark:bg-stone-900 p-4"
       >
-        <div className="flex items-center justify-between gap-4 flex-wrap mb-3">
+        <div className="flex items-center justify-between gap-4 flex-wrap mb-1">
           <h2 id="coverage-items-heading" className="font-semibold">
-            Purchase history
+            Purchases
           </h2>
+          {canWrite && (
+            <button
+              type="button"
+              onClick={() => setShowAddPanel((v) => !v)}
+              className="flex items-center gap-1 text-sm text-brand-600 dark:text-brand-400 hover:underline"
+            >
+              {showAddPanel ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              <Plus size={14} /> Add purchase
+            </button>
+          )}
         </div>
+        {summary && <CoverageStats summary={summary} />}
 
-        <div className="flex flex-wrap gap-3 items-end mb-4">
+        {showAddPanel && canWrite && (
+          <div className="mt-3 mb-1 pt-3 border-t border-stone-100 dark:border-stone-800">
+            <AddPurchasePanel onChanged={refreshAll} />
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-3 items-end mt-4 mb-4">
           <div>
             <label htmlFor="coverage-status" className="block text-xs text-stone-500 dark:text-stone-400">
               Status
@@ -668,7 +672,7 @@ export default function CoverageView() {
 
         {items && items.length > 0 && (
           <>
-            {selected.size > 0 && (
+            {canWrite && selected.size > 0 && (
               <BulkActionBar selectedCount={selected.size} products={products} onApply={applyBulkAction} onClear={() => setSelected(new Set())} />
             )}
 
@@ -677,15 +681,17 @@ export default function CoverageView() {
                 <caption className="sr-only">Purchase history items and their watchlist link status</caption>
                 <thead>
                   <tr className="text-brand-700 dark:text-brand-400 border-b border-brand-200 dark:border-brand-800">
-                    <th scope="col" className="py-1 pr-2 w-6">
-                      <input
-                        type="checkbox"
-                        checked={allVisibleSelected}
-                        onChange={toggleSelectAll}
-                        aria-label="Select all visible items"
-                        className="accent-brand-500"
-                      />
-                    </th>
+                    {canWrite && (
+                      <th scope="col" className="py-1 pr-2 w-6">
+                        <input
+                          type="checkbox"
+                          checked={allVisibleSelected}
+                          onChange={toggleSelectAll}
+                          aria-label="Select all visible items"
+                          className="accent-brand-500"
+                        />
+                      </th>
+                    )}
                     <th scope="col" className="py-1 pr-4">Item</th>
                     <th scope="col" className="py-1 pr-4">Site</th>
                     <th scope="col" className="py-1 pr-4">Status</th>
@@ -699,15 +705,17 @@ export default function CoverageView() {
                 <tbody>
                   {items.map((item) => (
                     <tr key={`${item.site_id}-${item.product_name}`} className="border-b border-stone-100 dark:border-stone-800 last:border-0">
-                      <td className="py-1.5 pr-2">
-                        <input
-                          type="checkbox"
-                          checked={selected.has(itemKey(item))}
-                          onChange={() => toggleSelect(item)}
-                          aria-label={`Select ${item.product_name}`}
-                          className="accent-brand-500"
-                        />
-                      </td>
+                      {canWrite && (
+                        <td className="py-1.5 pr-2">
+                          <input
+                            type="checkbox"
+                            checked={selected.has(itemKey(item))}
+                            onChange={() => toggleSelect(item)}
+                            aria-label={`Select ${item.product_name}`}
+                            className="accent-brand-500"
+                          />
+                        </td>
+                      )}
                       {editingKey === itemKey(item) ? (
                         <RowEditForm item={item} onDone={() => { setEditingKey(null); refreshAll(); }} />
                       ) : (
@@ -768,6 +776,7 @@ export default function CoverageView() {
                               products={products}
                               onChanged={refreshAll}
                               onEdit={() => setEditingKey(itemKey(item))}
+                              readOnly={!canWrite}
                             />
                           </td>
                         </>

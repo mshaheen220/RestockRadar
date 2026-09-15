@@ -187,16 +187,29 @@ async function getBackendUrl() {
   return backendUrl || DEFAULT_BACKEND_URL;
 }
 
+async function getApiToken() {
+  const { apiToken } = await chrome.storage.local.get('apiToken');
+  return apiToken || '';
+}
+
+// The extension can't hold a sign-in session at its own chrome-extension:// origin the way the
+// web app does, so it authenticates with a long-lived token instead (created in Settings → API
+// tokens) sent as a bearer header on every request.
+function authHeaders(token) {
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 function setStatus(message, kind) {
   const el = document.getElementById('status');
   el.textContent = message;
   el.className = kind || '';
 }
 
-async function loadProducts(backendUrl) {
+async function loadProducts(backendUrl, token) {
   const select = document.getElementById('product');
   try {
-    const res = await fetch(`${backendUrl}/watchlist`);
+    const res = await fetch(`${backendUrl}/watchlist`, { headers: authHeaders(token) });
+    if (res.status === 401) throw new Error('Not signed in — paste an API token below (from Settings → API tokens).');
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     allProducts = await res.json();
 
@@ -221,16 +234,18 @@ async function loadProducts(backendUrl) {
   } catch (err) {
     allProducts = [];
     select.innerHTML = '<option value="">Could not load watchlist</option>';
-    setStatus(`Couldn't reach RestockRadar at ${backendUrl} — check the backend settings below.`, 'error');
+    setStatus(err.message || `Couldn't reach RestockRadar at ${backendUrl} — check the backend settings below.`, 'error');
     updateSlotOptions();
   }
 }
 
 async function init() {
   const backendUrl = await getBackendUrl();
+  const apiToken = await getApiToken();
   document.getElementById('backend-url').value = backendUrl;
+  document.getElementById('api-token').value = apiToken;
 
-  loadProducts(backendUrl);
+  loadProducts(backendUrl, apiToken);
   document.getElementById('product').addEventListener('change', updateSlotOptions);
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -274,9 +289,10 @@ async function init() {
 
     try {
       const currentBackendUrl = await getBackendUrl();
+      const currentToken = await getApiToken();
       const res = await fetch(`${currentBackendUrl}/watchlist/${productId}/choices`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders(currentToken) },
         body: JSON.stringify({
           rank,
           label,
@@ -305,9 +321,10 @@ async function init() {
 
   document.getElementById('save-settings').addEventListener('click', async () => {
     const url = document.getElementById('backend-url').value.trim().replace(/\/$/, '');
-    await chrome.storage.local.set({ backendUrl: url });
-    setStatus('Backend URL saved.', 'success');
-    loadProducts(url);
+    const token = document.getElementById('api-token').value.trim();
+    await chrome.storage.local.set({ backendUrl: url, apiToken: token });
+    setStatus('Settings saved.', 'success');
+    loadProducts(url, token);
   });
 }
 

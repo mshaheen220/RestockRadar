@@ -20,6 +20,7 @@ find genuinely good deals on them, using your own purchase history as the yardst
 - Shows how much of your purchase history is actually organized, and lets you go the other direction —
   starting from an unlinked purchase and picking which watchlist product it belongs to (or telling it
   that item will never be a watchlist product).
+- Requires signing in, with three levels of access — see **Accounts and access** below.
 
 ## What it doesn't do yet
 
@@ -86,7 +87,7 @@ Once both are set, each preferred product shows its actual unit price next to it
 highlighted **green** if it's at or under your threshold and **red** if it's not — so the app is
 making the same call you'd make yourself, just automatically.
 
-The **Coverage** tab shows the same green/red unit price for your actual purchase history, not
+The **Purchases** tab shows the same green/red unit price for your actual purchase history, not
 just preferred products — a "Last price" column with the most recent price you paid and, where it
 could figure out the package size from the product name, the per-unit price too. This only shows
 the good/bad-deal color for items linked to a watchlist product with a **Good price** set (since
@@ -136,10 +137,26 @@ Brand-only matching can occasionally suggest something from the wrong product �
 Chobani-brand item showing up under your yogurt entry. That's expected; just dismiss it. Adding a
 **variety** or other criterion (not just brand) usually makes the suggestions more precise.
 
-## Adding new purchases
+## Purchases
 
-Open the **Purchases** tab whenever you've bought something new — this is meant to be a weekly
-habit, not an occasional chore.
+Open the **Purchases** tab to see your actual purchase history — every item, with its status
+(**Linked**, **Unmatched**, or **Ignored**), in one table. That table is the point of this tab;
+adding new purchases is deliberately tucked behind a button above it, not the first thing you see.
+
+A line above the table sums it up: what percent of what you're *actually tracking* is linked, how
+many items are unmatched, how many are ignored, and the total purchase count. That percentage
+deliberately leaves ignored items out of the math entirely — ignoring something (a one-off Amazon
+DVD, produce you're not tracking) is a decision you already made, not unfinished work, so it
+shouldn't make the number look worse. A household that's ignored 90% of its history and linked the
+rest legitimately reads "100% of what you're tracking," not some tiny, misleading digit.
+
+Use the **Status**, **Site**, and search filters to narrow the table down — e.g. Status = Linked to
+review and correct existing links, or Status = Unmatched to keep triaging what's left.
+
+### Adding a purchase
+
+Click **Add purchase** above the table whenever you've bought something new — this is meant to be
+a weekly habit, not an occasional chore, just not the main event on this page.
 
 **Add a single purchase** is for the common case: you stopped somewhere and bought one thing worth
 logging, nothing else. Fill in the site, product name, and what you paid — site and date stay
@@ -165,19 +182,12 @@ after adding a few new orders to it works fine.
 After a single add, you'll see a row of buttons right there — RestockRadar's best guesses for
 which watchlist product it belongs to, ranked most-likely first, plus a **Something else…**
 dropdown for anything not guessed and a **Not tracked** option for a one-off that'll never be a
-watchlist product. Link it right then, or leave it and it'll show up unmatched in **Coverage**
-later, same as anything from a bulk import — a full receipt always goes to Coverage for triage
-rather than prompting per-row, since a real receipt can have far too many new items to review one
-at a time.
+watchlist product. Link it right then, or leave it and it'll show up unmatched in the table below
+later, same as anything from a bulk import — a full receipt always goes straight to the table for
+triage rather than prompting per-row, since a real receipt can have far too many new items to
+review one at a time.
 
-## Checking your coverage
-
-Open the **Coverage** tab to see the big picture: what percent of your purchase history is linked to a
-watchlist product, and every purchase-history item with its status — **Linked**, **Unmatched**, or
-**Ignored** — in one table.
-
-Use the **Status**, **Site**, and search filters at the top to narrow it down — e.g. Status = Linked to
-review and correct existing links, or Status = Unmatched to keep triaging what's left.
+### Triaging the table
 
 Actions depend on an item's status:
 
@@ -222,6 +232,31 @@ This is the fastest way to clear out a filtered view — e.g. filter to Status =
 name pattern, select-all, and assign everything at once. "Unlink" and "Un-ignore" only do something to
 items that are actually linked/ignored — applying them to a mixed selection just skips the items where
 they don't apply.
+
+## Accounts and access
+
+Everyone signs in. There are three levels:
+
+- **Admin** — everything, including creating accounts and resetting anyone's password.
+- **Contributor** — can see and change everything except accounts (add purchases, edit the
+  watchlist, link/ignore/correct things in Purchases).
+- **Viewer** — can see everything (Deal Finder, the watchlist, your purchase history) but can't
+  add, edit, link, or import anything. A "read-only" tag next to your name in the header is the
+  reminder.
+
+Open the **Settings** tab to:
+- **Change your password** — needs your current one.
+- **Manage your API tokens** — needed for the browser extension, which can't stay signed in the
+  way the web app does (it lives at its own address, separate from this one). Create a token here,
+  copy it immediately (it's shown exactly once and can't be viewed again — only its hash is ever
+  kept, the same way your password itself is never stored in plain text), then paste it into the
+  extension's own **Backend settings** section, next to the API URL. Revoke a token any time from
+  here if you no longer trust wherever you pasted it.
+- **Manage accounts** (admin only) — create an account for anyone else in the house, set their
+  role, deactivate one without deleting it, or reset a password directly. There's no
+  self-registration and no email-based "forgot password" link (this app doesn't send email) — an
+  admin handles all of that by hand, which for a household app living on your own network is
+  simpler than it sounds.
 
 ## Using the app
 

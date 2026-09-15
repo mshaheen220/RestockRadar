@@ -56,7 +56,7 @@ Five-stage pipeline, single direction:
    those two, since that needs density, which is never guessed) — used wherever choices get ranked
    against each other or against purchase history (see DealDetector below). `watchlist_products.target_unit_price`
    is the "good deal" threshold a person sets (e.g. 0.35 for "$0.35/ct or better"). Both this tab
-   and the Coverage tab (below) render price/unit-price/good-deal-badge identically via
+   and the Purchases tab (below) render price/unit-price/good-deal-badge identically via
    `frontend/src/priceUtils.ts` (`formatMoney`, `unitPriceBadge`, `unitPriceBadgeClass`) —
    deliberately not stored/derived columns on the frontend side, computed on read so they can
    never drift out of sync with their inputs.
@@ -119,7 +119,7 @@ Five-stage pipeline, single direction:
    every suggestion via `/watchlist/{id}/match-suggestions`, nothing is linked automatically)
    + `backend/src/Matching/CoverageService.php` (the reverse direction: every distinct purchase-history
    item annotated with its status — linked/unmatched/ignored — filterable by status/site/search via
-   `/coverage/items`, so the same **Coverage** tab both triages new items and corrects existing links,
+   `/coverage/items`, so the same **Purchases** tab both triages new items and corrects existing links,
    e.g. unlinking something a brand-only match got wrong)
    + `backend/src/Analysis/DealDetector.php` — the other half of stage 4: `historicalStats($productNames, $targetUnit)`
    computes all-time-low/average/rolling-average (last 180 days) unit price from `transactions.normalized_unit_price`
@@ -158,12 +158,69 @@ Five-stage pipeline, single direction:
    against every watchlist product, not one watchlist product scored against every raw name. Both
    directions share a `scoreCandidate()` core so the scoring logic can't drift between them.
    `GET /coverage/suggest?product_name=` exposes the reverse direction; `frontend/src/components/
-   Purchases.tsx`'s `LinkSuggestion` calls it right after a single-purchase add and renders the
-   ranked results as one-click "link to X" buttons (falling back to a plain dropdown of every
+   AddPurchasePanel.tsx`'s `LinkSuggestion` calls it right after a single-purchase add and renders
+   the ranked results as one-click "link to X" buttons (falling back to a plain dropdown of every
    product, plus an "ignore" action) — closing the loop between adding a purchase and it actually
-   feeding Deal Finder's history, without a separate trip to Coverage for every add. A bulk CSV
-   import deliberately does NOT get this per-row prompt (too many new rows at once); those still
-   land in Coverage for triage, same as the original seed import.
+   feeding Deal Finder's history, without a separate trip to the purchase table for every add. A
+   bulk CSV import deliberately does NOT get this per-row prompt (too many new rows at once); those
+   still land in that same table for triage, same as the original seed import.
+
+   The frontend surfaces both under one **Purchases** tab (`CoverageView.tsx`, still named for the
+   service it's built on): the filterable purchase-history table is the tab's actual content, with
+   an **Add purchase** toggle above it (collapsed by default) revealing `AddPurchasePanel` — the
+   add-single/import-CSV forms that used to be their own separate "Purchases" tab, before merging
+   made "where do I see vs. add purchases" less confusing than having a tab called Purchases that
+   only ever added them. The summary line's percentage is `relevant_linked_ratio` —
+   `linked / (linked + unmatched)`, deliberately excluding `ignored` from *both* sides of that
+   fraction rather than the naive `linked / total` (renamed from `linked_ratio`, the previous,
+   misleading field: a household that's ignored 5,460 of 6,117 transactions and linked the
+   remaining 657 exactly should read 100%, not ~11%, since ignoring something is a decision
+   already made, not unfinished triage work).
+
+## Authentication
+
+Three roles, checked as a flat string everywhere: `admin` (full control, including user
+management), `contributor` (read/write everything else — watchlist, purchases, coverage),
+`viewer` (read-only everywhere — every GET works, every POST/PATCH/DELETE gets a 403).
+`backend/src/Auth/AuthService.php` owns both login paths and all user/token CRUD; `index.php`
+resolves the current user once near the top (`currentUser()`) and gates routes in three tiers:
+`/auth/login` is the only unauthenticated route; everything under `/users` requires `admin`;
+everything else requires an authenticated user, with a blanket `$method !== 'GET'` check blocking
+`viewer` from every other route in one place rather than re-checked per-route.
+
+Two ways to authenticate, resolving to the same `{id, username, role}` shape:
+- **Session cookie** (the web app) — plain `HttpOnly`, `SameSite=Lax`, PHP native session. This
+  only works because the web app is same-origin with the backend: Vite's dev-server proxy
+  (`vite.config.ts`'s `server.proxy['/api']`) forwards `/api/*` to the backend container, mirroring
+  what Caddy already does in production (`## Deployment target` below) — a cross-origin cookie
+  over plain HTTP (no TLS in local dev) can't reliably survive a `fetch()` the way a same-origin
+  one does, so `docker-compose.yml`'s frontend service no longer sets `VITE_API_BASE_URL` to hit
+  the backend's own port directly.
+- **Bearer token** (`Authorization: Bearer <token>`) — for the browser extension, which runs at
+  its own `chrome-extension://` origin and has no room for a login form in a 320px popup. A
+  token is created from Settings → API tokens (any role, not just admin — a contributor might also
+  use the extension) and shown exactly once; only its SHA-256 hash is ever stored, same principle
+  as `password_hash()` for passwords. Pasted into the extension's existing "Backend settings"
+  section (`extension/popup.html`'s new `#api-token` field), sent via `authHeaders()` in
+  `extension/popup.js` on every request.
+
+No self-registration, no email-based password reset (this app has no mail capability) — the very
+first account comes from `scripts/create_user.php` (prompts for the password interactively, via
+`stty -echo`, so it never ends up in shell history); after that, an admin creates/deactivates
+accounts and resets anyone's password directly from the Settings tab. `AuthService::updateUser()`
+and the `PATCH /users/{id}` route both refuse to demote or deactivate the last active admin, so
+there's no way to accidentally lock every admin out of user management.
+
+Frontend: `AuthContext.tsx` fetches `/auth/me` once on load and gates the whole app on it
+(`App.tsx`'s `<Gate>` renders `<Login>` when signed out) — `useAuth()` exposes `canWrite`
+(`admin`/`contributor`) and `isAdmin` for components to check. **Disclosed, partial scope**: the
+backend enforces the viewer boundary completely and correctly regardless of what the UI shows —
+that's the actual security boundary. The frontend hides the most prominent write controls for a
+`viewer` (the Purchases tab's `AddPurchasePanel`, Manage Watchlist's add/edit/delete/criteria/choice
+buttons, the purchase-history table's row actions and bulk bar) but this is not an exhaustive pass
+over every micro-control in those large components; a stray editable-looking control elsewhere
+would still correctly 403 from the backend rather than silently succeed, but wouldn't look
+disabled until clicked.
 
 ## Status
 
@@ -178,7 +235,7 @@ Five-stage pipeline, single direction:
   produce false positives across similar products (e.g. "Chobani Oatmilk" surfacing under a dairy yogurt
   watchlist entry just because the brand matches) — that's expected; it's why suggestions need a person
   to confirm rather than auto-linking.
-- The Coverage tab surfaces real gaps in the data: on the actual `transaction_log.csv`, only 7 watchlist
+- The Purchases tab surfaces real gaps in the data: on the actual `transaction_log.csv`, only 7 watchlist
   products exist against ~3,700 distinct unmatched item names — high-frequency items like "Fresh Banana,
   Each" (121×) show up unmatched simply because nothing on the watchlist covers produce yet, not because
   matching failed.
@@ -209,11 +266,14 @@ your actual purchase history without it ever being baked into an image or commit
 docker compose exec backend composer install
 docker compose exec backend php scripts/import_transactions.php /data/transaction_log.csv
 docker compose exec backend php scripts/seed_watchlist.php   # optional: starter watchlist from PROJECT-BRIEF.md
+docker compose exec -it backend php scripts/create_user.php <your-username> admin   # first account — run this one interactively (-it), not scripted, so the password prompt actually works
 ```
 
 This populates `backend/database/restockradar.sqlite` (gitignored, generated) from `transaction_log.csv`.
 Re-running is safe — duplicate rows are skipped via a `UNIQUE` constraint, not overwritten. Manage the
 watchlist afterward from the app itself (the "Manage Watchlist" tab) rather than re-running the seed script.
+Create any further accounts (for other household members, or the extension's own token) from the
+Settings tab once signed in — see `## Authentication` above.
 
 ### Without Docker
 
@@ -249,6 +309,7 @@ Point Caddy's site block at `frontend/dist` for static files and reverse-proxy `
 
 ```
 backend/            PHP API + analysis (stages 1, 3, 4, 5)
+  src/Auth/          users, sessions, API tokens, roles (AuthService)
   src/Watchlist/     stage 1 — watchlist CRUD
   src/Fetchers/      stage 2 — contract only, not implemented
   src/Storage/       PDO/SQLite connection

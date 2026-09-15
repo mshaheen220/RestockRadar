@@ -4,6 +4,34 @@
 
 PRAGMA foreign_keys = ON;
 
+-- Auth: three roles — 'admin' (full control, including user management), 'contributor'
+-- (read/write everything else — watchlist, purchases, coverage), 'viewer' (read-only everywhere).
+-- password_hash is PHP's password_hash() (bcrypt); the raw password is never stored or logged.
+-- There's no self-registration and no email-based reset (this app has no mail capability) — the
+-- first account is created via scripts/create_user.php, and an admin resets anyone else's
+-- password directly from the Settings tab.
+CREATE TABLE IF NOT EXISTS users (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    username       TEXT NOT NULL UNIQUE,
+    password_hash  TEXT NOT NULL,
+    role           TEXT NOT NULL CHECK (role IN ('admin', 'contributor', 'viewer')),
+    active         INTEGER NOT NULL DEFAULT 1,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Long-lived tokens for surfaces that can't hold a session cookie — specifically the browser
+-- extension, which runs at its own chrome-extension:// origin and has no room for a login form
+-- in a 320px popup. Same principle as password_hash: only a SHA-256 hash is stored, the raw
+-- token is shown to its owner exactly once (at creation, in Settings) and never stored or logged.
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash    TEXT NOT NULL UNIQUE,
+    label         TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    last_used_at  TEXT
+);
+
 -- Stage 1: sites we track (both purchase-history sources and future live-fetch targets)
 CREATE TABLE IF NOT EXISTS sites (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,

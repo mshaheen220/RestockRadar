@@ -465,24 +465,31 @@ function ImportForm({ onImported }: { onImported: () => void }) {
   );
 }
 
-export default function Purchases() {
+/**
+ * Embedded inside Coverage's "Add purchase" toggle, not a standalone page — the table of actual
+ * purchase history is the focus of that merged tab, this is a convenience tucked behind a button
+ * rather than the first thing on the page. `onChanged` re-runs whatever the host page uses to
+ * refresh its own data (the coverage summary/table), since an add here changes both.
+ */
+export default function AddPurchasePanel({ onChanged }: { onChanged: () => void }) {
   const [sites, setSites] = useState<Site[]>([]);
   const [products, setProducts] = useState<WatchlistProduct[]>([]);
 
   const loadSites = () => {
     sitesApi.list().then(setSites).catch(() => {});
+    onChanged();
   };
   const loadProducts = () => {
     watchlistApi.list().then(setProducts).catch(() => {});
   };
 
   useEffect(() => {
-    loadSites();
+    sitesApi.list().then(setSites).catch(() => {});
     loadProducts();
   }, []);
 
   return (
-    <div className="space-y-4 max-w-3xl">
+    <div className="space-y-4">
       <SinglePurchaseForm sites={sites} products={products} onAdded={loadSites} />
       <ImportForm onImported={loadSites} />
     </div>

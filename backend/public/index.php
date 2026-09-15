@@ -2,6 +2,23 @@
 
 /**
  * Minimal front controller — no framework, since the API surface is small.
+ *
+ * Auth: every route below except POST /auth/login requires either a session cookie (web app) or
+ * an `Authorization: Bearer <token>` header (browser extension). GET works for any role; every
+ * other method needs 'admin' or 'contributor' — 'viewer' is read-only everywhere. Routes under
+ * /users require 'admin' specifically. See RestockRadar\Auth\AuthService.
+ *   POST   /api/auth/login            { username, password }
+ *   POST   /api/auth/logout
+ *   GET    /api/auth/me
+ *   POST   /api/auth/change-password  { current_password, new_password }
+ *   GET    /api/auth/tokens
+ *   POST   /api/auth/tokens           { label? }             — returns the raw token ONCE
+ *   DELETE /api/auth/tokens/{id}
+ *   GET    /api/users                                        — admin only
+ *   POST   /api/users                 { username, password, role }
+ *   PATCH  /api/users/{id}            { role?, active?, password? }
+ *   DELETE /api/users/{id}
+ *
  * Routes:
  *   GET    /api/watchlist
  *   POST   /api/watchlist
@@ -38,6 +55,7 @@ require __DIR__ . '/../vendor/autoload.php';
 
 use RestockRadar\Analysis\DealDetector;
 use RestockRadar\Analysis\PackQuantity;
+use RestockRadar\Auth\AuthService;
 use RestockRadar\Import\TransactionImporter;
 use RestockRadar\Matching\CoverageService;
 use RestockRadar\Matching\ProductMatcher;
@@ -58,12 +76,24 @@ if ($configuredOrigin === '*' || $requestOrigin === $configuredOrigin || str_sta
     header("Access-Control-Allow-Origin: {$configuredOrigin}");
 }
 header('Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
+// Safe unconditionally: the block above never actually echoes a literal "*" back when a real
+// Origin header was sent, only that exact origin — which is what Allow-Credentials requires.
+header('Access-Control-Allow-Credentials: true');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
     exit;
 }
+
+// Session cookie: same-origin in both dev (Vite's proxy) and prod (Caddy's reverse proxy), so
+// plain Lax + HttpOnly is enough — no SameSite=None, which would need Secure/HTTPS, which isn't
+// guaranteed this app ever runs behind. Still marks Secure when the request DID arrive over
+// HTTPS (direct or via a proxy's X-Forwarded-Proto) so the cookie isn't needlessly sent in the
+// clear on a deployment that does have TLS.
+$isHttps = ($_SERVER['HTTPS'] ?? '') !== '' || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
+session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'secure' => $isHttps, 'httponly' => true, 'samesite' => 'Lax']);
+session_start();
 
 $pdo = Database::connection();
 $path = rtrim(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH), '/');
@@ -83,6 +113,168 @@ function jsonBody(): array
     $decoded = $raw === '' ? [] : json_decode($raw, true);
 
     return is_array($decoded) ? $decoded : [];
+}
+
+$auth = new AuthService($pdo);
+
+/** @return array{id: int, username: string, role: string}|null */
+function currentUser(AuthService $auth): ?array
+{
+    $header = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    if (str_starts_with($header, 'Bearer ')) {
+        return $auth->userFromToken(substr($header, 7));
+    }
+
+    if (!empty($_SESSION['user_id'])) {
+        return $auth->findActiveUser((int) $_SESSION['user_id']);
+    }
+
+    return null;
+}
+
+$user = currentUser($auth);
+
+if ($path === '/auth/login' && $method === 'POST') {
+    $body = jsonBody();
+    foreach (['username', 'password'] as $required) {
+        if (!isset($body[$required]) || trim((string) $body[$required]) === '') {
+            respond(['error' => "{$required} is required"], 422);
+        }
+    }
+
+    $loggedIn = $auth->login((string) $body['username'], (string) $body['password']);
+    if ($loggedIn === null) {
+        respond(['error' => 'Invalid username or password'], 401);
+    }
+
+    session_regenerate_id(true);
+    $_SESSION['user_id'] = $loggedIn['id'];
+    respond($loggedIn);
+}
+
+if ($user === null) {
+    respond(['error' => 'Authentication required'], 401);
+}
+
+// Self-service auth routes: any authenticated role, including viewer — changing your own
+// password or managing your own token is never a "write to app data" action.
+if ($path === '/auth/logout' && $method === 'POST') {
+    $_SESSION = [];
+    session_destroy();
+    respond(['loggedOut' => true]);
+}
+
+if ($path === '/auth/me' && $method === 'GET') {
+    respond($user);
+}
+
+if ($path === '/auth/change-password' && $method === 'POST') {
+    $body = jsonBody();
+    foreach (['current_password', 'new_password'] as $required) {
+        if (!isset($body[$required]) || trim((string) $body[$required]) === '') {
+            respond(['error' => "{$required} is required"], 422);
+        }
+    }
+
+    $ok = $auth->changeOwnPassword($user['id'], (string) $body['current_password'], (string) $body['new_password']);
+    if (!$ok) {
+        respond(['error' => 'Current password is incorrect'], 422);
+    }
+    respond(['changed' => true]);
+}
+
+if ($path === '/auth/tokens' && $method === 'GET') {
+    respond($auth->listTokens($user['id']));
+}
+
+if ($path === '/auth/tokens' && $method === 'POST') {
+    $body = jsonBody();
+    $raw = $auth->createToken($user['id'], !empty($body['label']) ? (string) $body['label'] : null);
+    respond(['token' => $raw], 201);
+}
+
+if (preg_match('#^/auth/tokens/(\d+)$#', $path, $m) && $method === 'DELETE') {
+    $auth->revokeToken((int) $m[1], $user['id']);
+    respond(['revoked' => true]);
+}
+
+// Admin-only: everything under /users. Checked before the generic write-gate below so a
+// contributor (who'd otherwise pass a plain "is this a write" check) still can't manage accounts.
+if (preg_match('#^/users#', $path)) {
+    if ($user['role'] !== 'admin') {
+        respond(['error' => 'Forbidden — admin only'], 403);
+    }
+
+    if ($path === '/users' && $method === 'GET') {
+        respond($auth->listUsers());
+    }
+
+    if ($path === '/users' && $method === 'POST') {
+        $body = jsonBody();
+        foreach (['username', 'password', 'role'] as $required) {
+            if (!isset($body[$required]) || trim((string) $body[$required]) === '') {
+                respond(['error' => "{$required} is required"], 422);
+            }
+        }
+        if (!in_array($body['role'], ['admin', 'contributor', 'viewer'], true)) {
+            respond(['error' => 'role must be one of: admin, contributor, viewer'], 422);
+        }
+
+        try {
+            $id = $auth->createUser((string) $body['username'], (string) $body['password'], (string) $body['role']);
+        } catch (\PDOException $e) {
+            respond(['error' => "Username \"{$body['username']}\" is already taken."], 409);
+        }
+        respond(['id' => $id], 201);
+    }
+
+    if (preg_match('#^/users/(\d+)$#', $path, $m) && $method === 'PATCH') {
+        $targetId = (int) $m[1];
+        $body = jsonBody();
+
+        // Refuse to demote/deactivate the last active admin — otherwise nobody could manage
+        // users again without going back to the database directly.
+        $wouldRemoveLastAdmin = $targetId === $user['id']
+            && $auth->activeAdminCount() <= 1
+            && ((isset($body['role']) && $body['role'] !== 'admin') || (isset($body['active']) && !$body['active']));
+        if ($wouldRemoveLastAdmin) {
+            respond(['error' => "Can't remove the last active admin."], 422);
+        }
+
+        if (isset($body['role']) && !in_array($body['role'], ['admin', 'contributor', 'viewer'], true)) {
+            respond(['error' => 'role must be one of: admin, contributor, viewer'], 422);
+        }
+
+        $fields = array_intersect_key($body, ['role' => true, 'active' => true]);
+        if (isset($fields['active'])) {
+            $fields['active'] = $fields['active'] ? 1 : 0;
+        }
+        $auth->updateUser($targetId, $fields);
+
+        if (!empty($body['password'])) {
+            $auth->setPassword($targetId, (string) $body['password']);
+        }
+
+        respond(['updated' => true]);
+    }
+
+    if (preg_match('#^/users/(\d+)$#', $path, $m) && $method === 'DELETE') {
+        $targetId = (int) $m[1];
+        if ($targetId === $user['id']) {
+            respond(['error' => "Can't delete your own account while signed in as it."], 422);
+        }
+        $auth->deleteUser($targetId);
+        respond(['deleted' => $targetId]);
+    }
+
+    respond(['error' => 'Not found', 'path' => $path], 404);
+}
+
+// Everything below this line is existing app data: any authenticated role can read it (GET),
+// but only admin/contributor can write to it — a viewer's role is enforced here once, rather
+// than re-checked in every individual route below.
+if ($method !== 'GET' && !in_array($user['role'], ['admin', 'contributor'], true)) {
+    respond(['error' => 'Forbidden — your account has read-only access'], 403);
 }
 
 $watchlistRepo = new WatchlistRepository($pdo);
