@@ -1,4 +1,4 @@
-import { useTheme, type ThemePreference } from '../hooks/useTheme';
+import type { ThemePreference } from '../hooks/useTheme';
 
 const OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: 'day', label: 'Day' },
@@ -6,9 +6,21 @@ const OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: 'system', label: 'System' },
 ];
 
-export default function ThemeSwitcher() {
-  const { preference, setTheme } = useTheme();
-
+/**
+ * Deliberately takes preference/setTheme as props rather than calling useTheme() itself — that
+ * hook both reads AND applies the theme (toggles the `dark` class, syncs localStorage), so it
+ * has to be called exactly once, at the app root where it's always mounted. Calling it again
+ * here would only apply/persist the theme while this component happened to be on screen — which
+ * is exactly the bug this replaced (moving this into Settings meant the theme reset on refresh
+ * and only "took" again once you happened to open Settings).
+ */
+export default function ThemeSwitcher({
+  preference,
+  setTheme,
+}: {
+  preference: ThemePreference;
+  setTheme: (next: ThemePreference) => void;
+}) {
   return (
     <div role="radiogroup" aria-label="Theme" className="inline-flex rounded-lg border border-brand-300 dark:border-brand-700 bg-white/60 dark:bg-stone-900/60 p-1 gap-1">
       {OPTIONS.map((option) => {

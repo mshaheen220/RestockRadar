@@ -2,6 +2,17 @@ import { useEffect, useState } from 'react';
 import { Copy, Plus, Trash2 } from 'lucide-react';
 import { authApi, usersApi, type ApiToken, type Role, type UserAccount } from '../api';
 import { useAuth } from '../AuthContext';
+import type { ThemePreference } from '../hooks/useTheme';
+import ThemeSwitcher from './ThemeSwitcher';
+
+function Theme({ preference, setTheme }: { preference: ThemePreference; setTheme: (next: ThemePreference) => void }) {
+  return (
+    <section className="rounded-xl border border-brand-200 dark:border-brand-800 bg-white dark:bg-stone-900 p-4">
+      <h2 className="font-semibold mb-3">Theme</h2>
+      <ThemeSwitcher preference={preference} setTheme={setTheme} />
+    </section>
+  );
+}
 
 function ChangePassword() {
   const [current, setCurrent] = useState('');
@@ -399,7 +410,13 @@ function ManageUsers() {
   );
 }
 
-export default function Settings() {
+export default function Settings({
+  themePreference,
+  setTheme,
+}: {
+  themePreference: ThemePreference;
+  setTheme: (next: ThemePreference) => void;
+}) {
   const { user, isAdmin } = useAuth();
 
   return (
@@ -408,6 +425,7 @@ export default function Settings() {
         Signed in as <span className="font-medium text-stone-700 dark:text-stone-300">{user?.username}</span> (
         {user?.role}).
       </p>
+      <Theme preference={themePreference} setTheme={setTheme} />
       <ChangePassword />
       <ApiTokens />
       {isAdmin && <ManageUsers />}

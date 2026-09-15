@@ -5,9 +5,9 @@ import CoverageView from './components/CoverageView';
 import DealFinder from './components/DealFinder';
 import Login from './components/Login';
 import Settings from './components/Settings';
-import ThemeSwitcher from './components/ThemeSwitcher';
 import VersionBadge from './components/VersionBadge';
 import WatchlistManager from './components/WatchlistManager';
+import { useTheme, type ThemePreference } from './hooks/useTheme';
 
 type Tab = 'deal-finder' | 'manage' | 'purchases' | 'settings';
 
@@ -18,7 +18,13 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'settings', label: 'Settings' },
 ];
 
-function AuthenticatedApp() {
+function AuthenticatedApp({
+  themePreference,
+  setTheme,
+}: {
+  themePreference: ThemePreference;
+  setTheme: (next: ThemePreference) => void;
+}) {
   const [tab, setTab] = useState<Tab>('deal-finder');
   const { user, canWrite, logout } = useAuth();
 
@@ -71,31 +77,42 @@ function AuthenticatedApp() {
           >
             <LogOut size={16} />
           </button>
-          <ThemeSwitcher />
         </div>
       </header>
       <main className="p-4 sm:p-6">
         {tab === 'deal-finder' && <DealFinder />}
         {tab === 'manage' && <WatchlistManager />}
         {tab === 'purchases' && <CoverageView />}
-        {tab === 'settings' && <Settings />}
+        {tab === 'settings' && <Settings themePreference={themePreference} setTheme={setTheme} />}
       </main>
     </div>
   );
 }
 
-function Gate() {
+function Gate({
+  themePreference,
+  setTheme,
+}: {
+  themePreference: ThemePreference;
+  setTheme: (next: ThemePreference) => void;
+}) {
   const { user, loading } = useAuth();
 
   if (loading) return null;
   if (!user) return <Login />;
-  return <AuthenticatedApp />;
+  return <AuthenticatedApp themePreference={themePreference} setTheme={setTheme} />;
 }
 
 export default function App() {
+  // Called once, here, at the app root — never conditionally unmounted based on which tab is
+  // showing — since this hook both reads AND applies the theme (toggles the `dark` class on
+  // <html>, syncs localStorage). Anything downstream that needs to show/change it (Settings)
+  // takes preference/setTheme as props instead of calling useTheme() itself.
+  const { preference, setTheme } = useTheme();
+
   return (
     <AuthProvider>
-      <Gate />
+      <Gate themePreference={preference} setTheme={setTheme} />
     </AuthProvider>
   );
 }
